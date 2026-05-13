@@ -18,6 +18,13 @@ public interface ScheduleRegistrationRepository extends JpaRepository<ScheduleRe
 
     Optional<ScheduleRegistration> findByUserAndShiftAndScheduleDate(AppUser user, Shift shift, LocalDate scheduleDate);
 
+    Optional<ScheduleRegistration> findByUserAndShiftAndScheduleDateAndStatus(
+            AppUser user,
+            Shift shift,
+            LocalDate scheduleDate,
+            ScheduleRegistrationStatus status
+    );
+
     List<ScheduleRegistration> findByUserAndScheduleDateBetweenOrderByScheduleDateAscShift_StartTimeAsc(
             AppUser user,
             LocalDate startDate,

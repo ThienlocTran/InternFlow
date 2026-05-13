@@ -1,6 +1,7 @@
 package com.java6.springboot.internflow.service.impl;
 
 import com.java6.springboot.internflow.dto.request.ScheduleRegistrationRequest;
+import com.java6.springboot.internflow.dto.response.ScheduleCapacityResponse;
 import com.java6.springboot.internflow.dto.response.ScheduleRegistrationResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.RolePolicy;
@@ -77,6 +78,46 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                 .toList();
     }
 
+    @Override
+    public List<ScheduleCapacityResponse> getCapacity(LocalDate startDate, LocalDate endDate) {
+        LocalDate start = startDate == null ? LocalDate.now().with(java.time.DayOfWeek.MONDAY) : startDate;
+        LocalDate end = endDate == null ? start.plusDays(6) : endDate;
+        List<Shift> shifts = shiftRepository.findAll()
+                .stream()
+                .sorted(Comparator.comparing(Shift::getStartTime))
+                .toList();
+
+        return start.datesUntil(end.plusDays(1))
+                .flatMap(date -> shifts.stream().map(shift -> {
+                    long registered = scheduleRegistrationRepository.countByShiftAndScheduleDateAndStatus(
+                            shift,
+                            date,
+                            ScheduleRegistrationStatus.REGISTERED
+                    );
+                    int count = Math.toIntExact(registered);
+                    return new ScheduleCapacityResponse(
+                            date,
+                            shift.getId(),
+                            count,
+                            shift.getMaxParticipants(),
+                            count >= shift.getMaxParticipants()
+                    );
+                }))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public ScheduleRegistrationResponse cancel(UUID registrationId) {
+        if (registrationId == null) {
+            throw new BusinessException("Registration id la bat buoc");
+        }
+        ScheduleRegistration registration = scheduleRegistrationRepository.findById(registrationId)
+                .orElseThrow(() -> new NotFoundException("Khong tim thay lich dang ky"));
+        registration.setStatus(ScheduleRegistrationStatus.CANCELLED);
+        return ScheduleRegistrationResponse.from(scheduleRegistrationRepository.save(registration));
+    }
+
     private ScheduleRegistration saveRegistration(AppUser user, Shift shift, ScheduleRegistrationRequest request) {
         scheduleRegistrationRepository.findByUserAndShiftAndScheduleDate(user, shift, request.scheduleDate())
                 .ifPresent(existing -> {
@@ -107,12 +148,24 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (shifts.size() <= 1) {
             return true;
         }
-        for (int i = 1; i < shifts.size(); i++) {
-            if (!shifts.get(i - 1).getEndTime().equals(shifts.get(i).getStartTime())) {
-                return false;
+        List<Integer> orders = shifts.stream()
+                .map(this::shiftOrder)
+                .sorted()
+                .toList();
+        return orders.get(orders.size() - 1) - orders.get(0) == orders.size() - 1;
+    }
+
+    private int shiftOrder(Shift shift) {
+        String code = shift.getCode() == null ? "" : shift.getCode();
+        int underscore = code.lastIndexOf('_');
+        if (underscore >= 0 && underscore + 1 < code.length()) {
+            try {
+                return Integer.parseInt(code.substring(underscore + 1));
+            } catch (NumberFormatException ignored) {
+                return 999;
             }
         }
-        return true;
+        return 999;
     }
 
     private void validateRequest(ScheduleRegistrationRequest request) {

@@ -17,8 +17,10 @@ import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
+import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.ShiftRepository;
 import com.java6.springboot.internflow.service.AttendanceService;
+import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -37,6 +39,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final ShiftRepository shiftRepository;
     private final RolePolicyRepository rolePolicyRepository;
     private final AttendanceImageRepository attendanceImageRepository;
+    private final ScheduleRegistrationRepository scheduleRegistrationRepository;
 
     @Override
     @Transactional
@@ -60,6 +63,12 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (todayShiftCount >= policy.getMaxShiftsPerDay()) {
             throw new BusinessException("Da vuot so ca toi da trong ngay");
         }
+        scheduleRegistrationRepository.findByUserAndShiftAndScheduleDateAndStatus(
+                user,
+                shift,
+                attendanceDate,
+                ScheduleRegistrationStatus.REGISTERED
+        ).orElseThrow(() -> new BusinessException("Ban can dang ky ca nay truoc khi diem danh"));
 
         long shiftParticipantCount = attendanceRepository.countByShiftAndAttendanceDate(shift, attendanceDate);
         if (shiftParticipantCount >= shift.getMaxParticipants()) {
