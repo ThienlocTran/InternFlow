@@ -21,18 +21,19 @@ git commit -m "Ready for Render deployment"
 git push origin main
 ```
 
-## Bước 3: Tạo Database trên Render (3 phút)
+## Bước 3: Lấy thông tin Database từ Neon.tech (2 phút)
 
-1. Vào https://dashboard.render.com
-2. Click **"New +"** → **"PostgreSQL"**
-3. Điền:
-   - Name: `internflow-db`
-   - Database: `internflow`
-   - User: `internflow`
-   - Region: **Singapore**
-   - Plan: **Free**
-4. Click **"Create Database"**
-5. **LƯU LẠI**: Internal Database URL, Username, Password
+1. Vào https://console.neon.tech
+2. Chọn project **InternFlow** của bạn
+3. Vào tab **Dashboard** hoặc **Connection Details**
+4. **LƯU LẠI** các thông tin sau:
+   - **Connection String**: `postgresql://user:password@host/database`
+   - Hoặc riêng lẻ:
+     - Host
+     - Database name
+     - User
+     - Password
+5. Đảm bảo database đang **Active**
 
 ## Bước 4: Deploy Web Service (5 phút)
 
@@ -66,10 +67,10 @@ Copy từng dòng này và điền giá trị:
 # Spring Profile
 SPRING_PROFILES_ACTIVE=production
 
-# Database (lấy từ Render Database ở Bước 3)
-DATABASE_URL=<Internal-Database-URL>
-DATABASE_USERNAME=<username>
-DATABASE_PASSWORD=<password>
+# Database (lấy từ Neon.tech ở Bước 3)
+DATABASE_URL=<neon-connection-string>
+DATABASE_USERNAME=<neon-username>
+DATABASE_PASSWORD=<neon-password>
 
 # Cloudinary (lấy từ cloudinary.com)
 CLOUDINARY_CLOUD_NAME=<your-cloud-name>

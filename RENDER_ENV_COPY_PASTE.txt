@@ -1,0 +1,86 @@
+===========================================
+COPY TỪNG DÒNG VÀ PASTE VÀO RENDER
+===========================================
+
+Vào Render Dashboard → Web Service → Environment
+Click "Add Environment Variable" và paste từng cặp NAME/VALUE dưới đây:
+
+-------------------------------------------
+1. Spring Profile
+-------------------------------------------
+NAME: SPRING_PROFILES_ACTIVE
+VALUE: production
+
+-------------------------------------------
+2. Database (Neon.tech)
+-------------------------------------------
+NAME: DATABASE_URL
+VALUE: jdbc:postgresql://ep-nameless-unit-aowa4mmg-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require
+
+NAME: DATABASE_USERNAME
+VALUE: neondb_owner
+
+NAME: DATABASE_PASSWORD
+VALUE: npg_6ZnjCYkRUFS0
+
+-------------------------------------------
+3. Cloudinary
+-------------------------------------------
+NAME: CLOUDINARY_CLOUD_NAME
+VALUE: durw8vp93
+
+NAME: CLOUDINARY_API_KEY
+VALUE: 532238723367261
+
+NAME: CLOUDINARY_API_SECRET
+VALUE: s5_kmlxKJks74N6X2J1OsjyGpO4
+
+-------------------------------------------
+4. Google OAuth
+-------------------------------------------
+NAME: GOOGLE_OAUTH_CLIENT_ID
+VALUE: 548332785385-5t4pcftrhba9f0fj7lsnqourqgt9ik6e.apps.googleusercontent.com
+
+-------------------------------------------
+5. Email (Gmail SMTP)
+-------------------------------------------
+NAME: MAIL_HOST
+VALUE: smtp.gmail.com
+
+NAME: MAIL_PORT
+VALUE: 587
+
+NAME: MAIL_USERNAME
+VALUE: [ĐIỀN EMAIL GMAIL CỦA BẠN]
+
+NAME: MAIL_PASSWORD
+VALUE: [ĐIỀN GMAIL APP PASSWORD 16 KÝ TỰ]
+
+NAME: INTERNFLOW_MAIL_TO
+VALUE: tuyendungbpns@gmail.com
+
+NAME: INTERNFLOW_MAIL_CC
+VALUE: xuandat210425cty@gmail.com
+
+===========================================
+TỔNG CỘNG: 14 BIẾN
+===========================================
+
+⚠️ LƯU Ý:
+- MAIL_USERNAME: Điền email Gmail của bạn
+- MAIL_PASSWORD: Phải là App Password (16 ký tự), KHÔNG phải mật khẩu Gmail thông thường
+  
+  Cách tạo App Password:
+  1. Vào: https://myaccount.google.com/security
+  2. Bật 2-Step Verification
+  3. Tìm "App passwords"
+  4. Tạo password cho Mail
+  5. Copy 16 ký tự (bỏ dấu cách)
+
+===========================================
+SAU KHI ĐIỀN XONG:
+===========================================
+1. Click "Save Changes"
+2. Render sẽ tự động redeploy (3-5 phút)
+3. Xem Logs để kiểm tra
+4. Test: https://your-app-name.onrender.com/actuator/health
