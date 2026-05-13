@@ -3,9 +3,11 @@ package com.java6.springboot.internflow.controller;
 import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.request.AddTeamMemberRequest;
 import com.java6.springboot.internflow.dto.request.TeamRequest;
+import com.java6.springboot.internflow.dto.response.ShiftPeerResponse;
 import com.java6.springboot.internflow.dto.response.TeamResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.service.TeamService;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -39,5 +41,13 @@ public class TeamController {
     @GetMapping("/{teamId}/members")
     public ApiResponse<List<UserResponse>> getMembers(@PathVariable UUID teamId) {
         return ApiResponse.ok("Lay thanh vien nhom thanh cong", teamService.getMembers(teamId));
+    }
+
+    @GetMapping("/leader-shift-peers")
+    public ApiResponse<List<ShiftPeerResponse>> getLeaderShiftPeers(
+            @org.springframework.web.bind.annotation.RequestParam UUID leaderId,
+            @org.springframework.web.bind.annotation.RequestParam LocalDate date
+    ) {
+        return ApiResponse.ok("Lay danh sach cung ca thanh cong", teamService.getLeaderShiftPeers(leaderId, date));
     }
 }

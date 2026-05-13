@@ -1,28 +1,34 @@
 package com.java6.springboot.internflow.service.impl;
 
-import com.java6.springboot.internflow.dto.request.InternshipCohortRequest;
+import com.java6.springboot.internflow.dto.response.AdminStudentDetailResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceAuditResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
 import com.java6.springboot.internflow.dto.response.InternshipCohortResponse;
-import com.java6.springboot.internflow.dto.response.StudentDetailResponse;
+import com.java6.springboot.internflow.dto.response.ReportEntryResponse;
+import com.java6.springboot.internflow.dto.response.StudentWorkDayDetailResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
-import com.java6.springboot.internflow.entity.InternshipCohort;
+import com.java6.springboot.internflow.entity.ReportDocument;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.enums.AttendanceImageType;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
 import com.java6.springboot.internflow.enums.UserRole;
-import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
-import com.java6.springboot.internflow.repository.InternshipCohortRepository;
+import com.java6.springboot.internflow.repository.ReportDocumentRepository;
+import com.java6.springboot.internflow.repository.ReportEntryRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
-import com.java6.springboot.internflow.service.InternshipCohortService;
+import com.java6.springboot.internflow.service.AdminStudentDetailService;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,58 +37,21 @@ import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
-public class InternshipCohortServiceImpl implements InternshipCohortService {
+public class AdminStudentDetailServiceImpl implements AdminStudentDetailService {
 
-    private static final int REQUIRED_REPORT_PAGES_PER_SHIFT = 8;
+    private static final int DAY_SHIFT_REQUIRED_PAGES = 8;
+    private static final int NIGHT_SHIFT_REQUIRED_PAGES = 5;
 
-    private final InternshipCohortRepository internshipCohortRepository;
     private final AppUserRepository appUserRepository;
     private final AttendanceRepository attendanceRepository;
     private final AttendanceImageRepository attendanceImageRepository;
+    private final ReportDocumentRepository reportDocumentRepository;
+    private final ReportEntryRepository reportEntryRepository;
     private final RolePolicyRepository rolePolicyRepository;
 
     @Override
-    @Transactional
-    public InternshipCohortResponse create(InternshipCohortRequest request) {
-        validateRequest(request);
-        String code = request.code().trim().toUpperCase();
-        if (internshipCohortRepository.existsByCode(code)) {
-            throw new BusinessException("Ma khoa da ton tai");
-        }
-
-        InternshipCohort cohort = InternshipCohort.builder()
-                .code(code)
-                .name(request.name().trim())
-                .startDate(request.startDate())
-                .endDate(request.endDate())
-                .active(request.active() == null || request.active())
-                .defaultForNewStudents(request.defaultForNewStudents() == null || request.defaultForNewStudents())
-                .build();
-        return InternshipCohortResponse.from(internshipCohortRepository.save(cohort));
-    }
-
-    @Override
     @Transactional(readOnly = true)
-    public List<InternshipCohortResponse> getAll() {
-        return internshipCohortRepository.findAll()
-                .stream()
-                .map(InternshipCohortResponse::from)
-                .toList();
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<UserResponse> getStudents(UUID cohortId) {
-        InternshipCohort cohort = findCohort(cohortId);
-        return appUserRepository.findByCohortOrderByCreatedAtDesc(cohort)
-                .stream()
-                .map(UserResponse::from)
-                .toList();
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public StudentDetailResponse getStudentDetail(UUID studentId) {
+    public AdminStudentDetailResponse getStudentDetail(UUID studentId) {
         AppUser student = appUserRepository.findById(studentId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay sinh vien"));
         RolePolicy policy = rolePolicyRepository.findByRole(student.getRole())
@@ -92,20 +61,83 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
         long completed = attendanceRepository.countByUserAndStatus(student, AttendanceStatus.CHECKED_OUT);
         long remaining = Math.max(0, requiredCompanyShifts - completed);
 
-        List<AttendanceAuditResponse> audits = attendanceRepository.findByUserOrderByAttendanceDateDescShift_StartTimeAsc(student)
-                .stream()
-                .map(this::auditAttendance)
+        List<Attendance> attendances = attendanceRepository.findByUserOrderByAttendanceDateDescShift_StartTimeAsc(student);
+        Map<LocalDate, List<AttendanceAuditResponse>> attendanceByDate = new LinkedHashMap<>();
+        attendances.forEach(attendance -> attendanceByDate
+                .computeIfAbsent(attendance.getAttendanceDate(), ignored -> new ArrayList<>())
+                .add(auditAttendance(attendance)));
+
+        Map<LocalDate, ReportEntryResponse> reportByDate = reportDocumentRepository.findByUser(student)
+                .map(this::reportEntriesByDate)
+                .orElseGet(LinkedHashMap::new);
+
+        List<LocalDate> dates = new ArrayList<>();
+        attendanceByDate.keySet().forEach(date -> {
+            if (!dates.contains(date)) {
+                dates.add(date);
+            }
+        });
+        reportByDate.keySet().forEach(date -> {
+            if (!dates.contains(date)) {
+                dates.add(date);
+            }
+        });
+        dates.sort(Comparator.reverseOrder());
+
+        List<StudentWorkDayDetailResponse> workDays = dates.stream()
+                .map(date -> buildWorkDay(date, attendanceByDate.getOrDefault(date, List.of()), reportByDate.get(date)))
                 .toList();
 
-        return new StudentDetailResponse(
+        return new AdminStudentDetailResponse(
                 UserResponse.from(student),
                 InternshipCohortResponse.from(student.getCohort()),
                 completed,
                 remaining,
                 requiredCompanyShifts,
                 requiredHomeShifts,
-                audits
+                workDays
         );
+    }
+
+    private Map<LocalDate, ReportEntryResponse> reportEntriesByDate(ReportDocument document) {
+        Map<LocalDate, ReportEntryResponse> result = new LinkedHashMap<>();
+        reportEntryRepository.findByDocumentOrderByWorkDateDesc(document)
+                .forEach(entry -> result.put(entry.getWorkDate(), ReportEntryResponse.from(entry)));
+        return result;
+    }
+
+    private StudentWorkDayDetailResponse buildWorkDay(
+            LocalDate date,
+            List<AttendanceAuditResponse> attendances,
+            ReportEntryResponse reportEntry
+    ) {
+        int missingPersonal = attendances.stream().mapToInt(AttendanceAuditResponse::missingPersonalImages).sum();
+        int missingGroup = attendances.stream().mapToInt(AttendanceAuditResponse::missingGroupImages).sum();
+        int requiredReportPages = reportEntry != null ? reportEntry.requiredPages() : requiredReportPages(attendances);
+        int submittedReportPages = reportEntry != null ? reportEntry.pageCount() : 0;
+        int missingReportPages = Math.max(0, requiredReportPages - submittedReportPages);
+        return new StudentWorkDayDetailResponse(
+                date,
+                attendances,
+                reportEntry,
+                missingPersonal,
+                missingGroup,
+                requiredReportPages,
+                submittedReportPages,
+                missingReportPages,
+                missingPersonal == 0 && missingGroup == 0,
+                requiredReportPages == 0 || missingReportPages == 0
+        );
+    }
+
+    private int requiredReportPages(List<AttendanceAuditResponse> attendances) {
+        if (attendances.isEmpty()) {
+            return 0;
+        }
+        boolean hasDayShift = attendances.stream()
+                .map(AttendanceAuditResponse::shiftName)
+                .anyMatch(name -> "Ca 1".equals(name) || "Ca 2".equals(name));
+        return hasDayShift ? DAY_SHIFT_REQUIRED_PAGES : NIGHT_SHIFT_REQUIRED_PAGES;
     }
 
     private AttendanceAuditResponse auditAttendance(Attendance attendance) {
@@ -122,8 +154,6 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
                 + countImages(images, AttendanceImageType.GROUP);
         int missingPersonal = Math.max(0, requiredPersonal - uploadedPersonal);
         int missingGroup = Math.max(0, requiredGroup - uploadedGroup);
-        int reportPages = attendance.getReportPageCount();
-
         return new AttendanceAuditResponse(
                 attendance.getId(),
                 attendance.getShift().getName(),
@@ -134,10 +164,10 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
                 requiredGroup,
                 uploadedGroup,
                 missingGroup,
-                REQUIRED_REPORT_PAGES_PER_SHIFT,
-                reportPages,
+                0,
+                0,
                 missingPersonal == 0 && missingGroup == 0,
-                reportPages >= REQUIRED_REPORT_PAGES_PER_SHIFT,
+                true,
                 attendance.getCheckinTimemarkImageUrl(),
                 attendance.getCheckinGroupImageUrl(),
                 attendance.getCheckoutTimemarkImageUrl(),
@@ -169,25 +199,5 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
             count++;
         }
         return count;
-    }
-
-    private void validateRequest(InternshipCohortRequest request) {
-        if (request == null || !StringUtils.hasText(request.code())) {
-            throw new BusinessException("Ma khoa la bat buoc");
-        }
-        if (!StringUtils.hasText(request.name())) {
-            throw new BusinessException("Ten khoa la bat buoc");
-        }
-        if (request.startDate() == null) {
-            throw new BusinessException("Ngay bat dau la bat buoc");
-        }
-    }
-
-    private InternshipCohort findCohort(UUID id) {
-        if (id == null) {
-            throw new BusinessException("Cohort id la bat buoc");
-        }
-        return internshipCohortRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay khoa thuc tap"));
     }
 }

@@ -3,6 +3,7 @@ package com.java6.springboot.internflow.service.impl;
 import com.java6.springboot.internflow.dto.request.ScheduleRegistrationRequest;
 import com.java6.springboot.internflow.dto.response.ScheduleCapacityResponse;
 import com.java6.springboot.internflow.dto.response.ScheduleRegistrationResponse;
+import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
@@ -15,9 +16,12 @@ import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.ShiftRepository;
 import com.java6.springboot.internflow.service.ScheduleRegistrationService;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -57,6 +61,17 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (existingCount + shifts.size() > policy.getMaxShiftsPerDay()) {
             throw new BusinessException("Vuot so ca toi da trong ngay");
         }
+        LocalDate weekStart = request.scheduleDate().with(DayOfWeek.MONDAY);
+        LocalDate weekEnd = weekStart.plusDays(6);
+        long weeklyCount = scheduleRegistrationRepository.countByUserAndScheduleDateBetweenAndStatus(
+                user,
+                weekStart,
+                weekEnd,
+                ScheduleRegistrationStatus.REGISTERED
+        );
+        if (policy.getTargetShiftsPerWeek() > 0 && weeklyCount + shifts.size() > policy.getTargetShiftsPerWeek()) {
+            throw new BusinessException("Vuot chi tieu " + policy.getTargetShiftsPerWeek() + " ca trong tuan");
+        }
         if (!isAdjacent(shifts)) {
             throw new BusinessException("Sinh vien nen chon cac ca lien ke nhau trong cung ngay");
         }
@@ -68,6 +83,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ScheduleRegistrationResponse> getUserSchedule(UUID userId, LocalDate startDate, LocalDate endDate) {
         AppUser user = findUser(userId);
         LocalDate start = startDate == null ? LocalDate.now().with(java.time.DayOfWeek.MONDAY) : startDate;
@@ -79,6 +95,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ScheduleCapacityResponse> getCapacity(LocalDate startDate, LocalDate endDate) {
         LocalDate start = startDate == null ? LocalDate.now().with(java.time.DayOfWeek.MONDAY) : startDate;
         LocalDate end = endDate == null ? start.plusDays(6) : endDate;
@@ -89,18 +106,18 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
         return start.datesUntil(end.plusDays(1))
                 .flatMap(date -> shifts.stream().map(shift -> {
-                    long registered = scheduleRegistrationRepository.countByShiftAndScheduleDateAndStatus(
+                    List<UserResponse> participants = getRegisteredParticipants(
                             shift,
-                            date,
-                            ScheduleRegistrationStatus.REGISTERED
+                            date
                     );
-                    int count = Math.toIntExact(registered);
+                    int count = participants.size();
                     return new ScheduleCapacityResponse(
                             date,
                             shift.getId(),
                             count,
                             shift.getMaxParticipants(),
-                            count >= shift.getMaxParticipants()
+                            count >= shift.getMaxParticipants(),
+                            participants
                     );
                 }))
                 .toList();
@@ -119,20 +136,26 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     private ScheduleRegistration saveRegistration(AppUser user, Shift shift, ScheduleRegistrationRequest request) {
-        scheduleRegistrationRepository.findByUserAndShiftAndScheduleDate(user, shift, request.scheduleDate())
-                .ifPresent(existing -> {
-                    if (existing.getStatus() == ScheduleRegistrationStatus.REGISTERED) {
-                        throw new BusinessException("Ban da dang ky " + shift.getName() + " trong ngay nay");
-                    }
-                });
+        Optional<ScheduleRegistration> existingRegistration =
+                scheduleRegistrationRepository.findByUserAndShiftAndScheduleDate(user, shift, request.scheduleDate());
 
-        long shiftCount = scheduleRegistrationRepository.countByShiftAndScheduleDateAndStatus(
-                shift,
-                request.scheduleDate(),
-                ScheduleRegistrationStatus.REGISTERED
-        );
-        if (shiftCount >= shift.getMaxParticipants()) {
+        if (existingRegistration
+                .map(ScheduleRegistration::getStatus)
+                .filter(ScheduleRegistrationStatus.REGISTERED::equals)
+                .isPresent()) {
+            throw new BusinessException("Ban da dang ky " + shift.getName() + " trong ngay nay");
+        }
+
+        int shiftUserCount = getRegisteredParticipants(shift, request.scheduleDate()).size();
+        if (shiftUserCount >= shift.getMaxParticipants()) {
             throw new BusinessException(shift.getName() + " da du " + shift.getMaxParticipants() + " ban");
+        }
+
+        if (existingRegistration.isPresent()) {
+            ScheduleRegistration existing = existingRegistration.get();
+            existing.setStatus(ScheduleRegistrationStatus.REGISTERED);
+            existing.setNote(StringUtils.hasText(request.note()) ? request.note().trim() : null);
+            return scheduleRegistrationRepository.save(existing);
         }
 
         return scheduleRegistrationRepository.save(ScheduleRegistration.builder()
@@ -142,6 +165,20 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                 .status(ScheduleRegistrationStatus.REGISTERED)
                 .note(StringUtils.hasText(request.note()) ? request.note().trim() : null)
                 .build());
+    }
+
+    private List<UserResponse> getRegisteredParticipants(Shift shift, LocalDate scheduleDate) {
+        LinkedHashMap<UUID, AppUser> users = new LinkedHashMap<>();
+        scheduleRegistrationRepository
+                .findByShiftAndScheduleDateAndStatusOrderByUser_FullNameAsc(
+                        shift,
+                        scheduleDate,
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .forEach(registration -> users.putIfAbsent(registration.getUser().getId(), registration.getUser()));
+        return users.values().stream()
+                .map(UserResponse::from)
+                .toList();
     }
 
     private boolean isAdjacent(List<Shift> shifts) {

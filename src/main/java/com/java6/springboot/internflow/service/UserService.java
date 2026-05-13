@@ -9,6 +9,8 @@ public interface UserService {
 
     UserResponse createProfile(UserProfileRequest request);
 
+    UserResponse updateProfile(UUID id, UserProfileRequest request);
+
     UserResponse getById(UUID id);
 
     List<UserResponse> getAll();

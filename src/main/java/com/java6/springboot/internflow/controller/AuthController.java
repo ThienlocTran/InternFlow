@@ -15,7 +15,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,7 +32,10 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private static final String ADMIN_EMAIL = "tranthienloc21102005@gmail.com";
+    private static final Set<String> ADMIN_EMAILS = Set.of(
+            "tranthienloc.nina@gmail.com",
+            "tranthienloc21102005@gmail.com"
+    );
 
     private final AppUserRepository appUserRepository;
     private final InternshipCohortRepository internshipCohortRepository;
@@ -41,6 +46,7 @@ public class AuthController {
     private String googleClientId;
 
     @PostMapping("/google")
+    @Transactional
     public ApiResponse<UserResponse> loginWithGoogle(@RequestBody GoogleLoginRequest request) {
         if (request == null || !StringUtils.hasText(request.idToken())) {
             throw new BusinessException("Google token la bat buoc");
@@ -54,17 +60,22 @@ public class AuthController {
             throw new BusinessException("Email Google chua duoc xac minh");
         }
 
-        String email = tokenInfo.path("email").asText("").trim().toLowerCase();
-        String name = tokenInfo.path("name").asText(email);
+        String email = tokenInfo.path("email").asText().trim().toLowerCase();
+        String name = tokenInfo.path("name").asText();
+        if (!StringUtils.hasText(name)) {
+            name = email;
+        }
         if (!StringUtils.hasText(email)) {
             throw new BusinessException("Google token khong co email");
         }
+        final String loginEmail = email;
+        final String displayName = StringUtils.hasText(name) ? name : loginEmail;
 
-        AppUser user = appUserRepository.findByEmail(email).orElseGet(() -> {
+        AppUser user = appUserRepository.findByEmail(loginEmail).orElseGet(() -> {
             AppUser newUser = AppUser.builder()
-                    .email(email)
-                    .fullName(StringUtils.hasText(name) ? name : email)
-                    .role(ADMIN_EMAIL.equals(email) ? UserRole.ADMIN : UserRole.INTERN)
+                    .email(loginEmail)
+                    .fullName(displayName)
+                    .role(ADMIN_EMAILS.contains(loginEmail) ? UserRole.ADMIN : UserRole.INTERN)
                     .active(true)
                     .build();
             if (newUser.getRole() == UserRole.INTERN) {

@@ -1,15 +1,13 @@
 package com.java6.springboot.internflow.entity;
 
-import com.java6.springboot.internflow.enums.UserRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
@@ -27,43 +25,30 @@ import org.hibernate.annotations.UpdateTimestamp;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "app_users")
-public class AppUser {
+@Table(name = "report_documents")
+public class ReportDocument {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, unique = true, length = 150)
-    private String email;
+    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    private AppUser user;
 
-    @Column(name = "full_name", nullable = false, length = 120)
-    private String fullName;
-
-    @Column(name = "student_code", unique = true, length = 50)
-    private String studentCode;
-
-    @Column(name = "student_class", length = 80)
-    private String studentClass;
-
-    @Column(length = 120)
-    private String school;
-
-    @Column(length = 30)
-    private String phone;
-
-    @ManyToOne
-    @JoinColumn(name = "cohort_id")
-    private InternshipCohort cohort;
+    @Column(nullable = false, length = 180)
+    private String title;
 
     @Builder.Default
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private UserRole role = UserRole.INTERN;
+    @Column(name = "total_pages", nullable = false)
+    private int totalPages = 0;
 
     @Builder.Default
-    @Column(name = "active", nullable = false)
-    private Boolean active = true;
+    @Column(name = "completed_shift_count", nullable = false)
+    private int completedShiftCount = 0;
+
+    @Column(name = "current_file_name", length = 220)
+    private String currentFileName;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

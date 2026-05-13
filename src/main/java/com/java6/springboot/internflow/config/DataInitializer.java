@@ -9,6 +9,7 @@ import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ShiftRepository;
 import java.time.LocalTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ public class DataInitializer implements CommandLineRunner {
         seedShifts();
         seedRolePolicies();
         seedAdminUser();
+        seedTeamLeaderUser();
     }
 
     private void seedShifts() {
@@ -37,7 +39,7 @@ public class DataInitializer implements CommandLineRunner {
 
     private void seedRolePolicies() {
         createOrUpdatePolicy(UserRole.INTERN, 2, 6, 60, 10, 6, 1);
-        createOrUpdatePolicy(UserRole.TEAM_LEADER, 0, 0, 0, 0, 0, 0);
+        createOrUpdatePolicy(UserRole.TEAM_LEADER, 3, 9, 60, 10, 6, 1);
         createOrUpdatePolicy(UserRole.MANAGER, 0, 0, 0, 0, 0, 0);
         createOrUpdatePolicy(UserRole.ADMIN, 0, 0, 0, 0, 0, 0);
     }
@@ -95,7 +97,8 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedAdminUser() {
-        String adminEmail = "tranthienloc21102005@gmail.com";
+        List<String> adminEmails = List.of("tranthienloc.nina@gmail.com", "tranthienloc21102005@gmail.com");
+        adminEmails.forEach(adminEmail ->
         appUserRepository.findByEmail(adminEmail).ifPresentOrElse(
                 user -> {
                     if (user.getRole() != UserRole.ADMIN) {
@@ -110,6 +113,14 @@ public class DataInitializer implements CommandLineRunner {
                         .role(UserRole.ADMIN)
                         .active(true)
                         .build())
-        );
+        ));
+    }
+
+    private void seedTeamLeaderUser() {
+        appUserRepository.findByEmail("hangluong6910@gmail.com").ifPresent(user -> {
+            user.setRole(UserRole.TEAM_LEADER);
+            user.setActive(true);
+            appUserRepository.save(user);
+        });
     }
 }

@@ -17,6 +17,10 @@ public record AttendanceAuditResponse(
         int submittedReportPages,
         boolean enoughImages,
         boolean enoughReportPages,
+        String checkinTimemarkImageUrl,
+        String checkinGroupImageUrl,
+        String checkoutTimemarkImageUrl,
+        String checkoutGroupImageUrl,
         List<AttendanceImageResponse> images
 ) {
 }
