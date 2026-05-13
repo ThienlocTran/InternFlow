@@ -6,6 +6,7 @@ public record UserProfileRequest(
         String email,
         String fullName,
         String studentCode,
+        String studentClass,
         String school,
         String phone,
         UserRole role

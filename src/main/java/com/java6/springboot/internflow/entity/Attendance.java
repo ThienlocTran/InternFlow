@@ -94,6 +94,13 @@ public class Attendance {
     @Column(length = 500)
     private String note;
 
+    @Builder.Default
+    @Column(name = "report_page_count", nullable = false, columnDefinition = "integer default 0")
+    private int reportPageCount = 0;
+
+    @Column(name = "report_document_url", length = 500)
+    private String reportDocumentUrl;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

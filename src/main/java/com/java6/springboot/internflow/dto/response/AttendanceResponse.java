@@ -4,6 +4,7 @@ import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 public record AttendanceResponse(
@@ -18,10 +19,17 @@ public record AttendanceResponse(
         String checkinGroupImageUrl,
         String checkoutTimemarkImageUrl,
         String checkoutGroupImageUrl,
-        String note
+        String note,
+        int reportPageCount,
+        String reportDocumentUrl,
+        List<AttendanceImageResponse> images
 ) {
 
     public static AttendanceResponse from(Attendance attendance) {
+        return from(attendance, List.of());
+    }
+
+    public static AttendanceResponse from(Attendance attendance, List<AttendanceImageResponse> images) {
         return new AttendanceResponse(
                 attendance.getId(),
                 UserResponse.from(attendance.getUser()),
@@ -34,7 +42,10 @@ public record AttendanceResponse(
                 attendance.getCheckinGroupImageUrl(),
                 attendance.getCheckoutTimemarkImageUrl(),
                 attendance.getCheckoutGroupImageUrl(),
-                attendance.getNote()
+                attendance.getNote(),
+                attendance.getReportPageCount(),
+                attendance.getReportDocumentUrl(),
+                images
         );
     }
 }

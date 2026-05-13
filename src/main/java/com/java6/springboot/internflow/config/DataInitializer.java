@@ -2,8 +2,10 @@ package com.java6.springboot.internflow.config;
 
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.entity.Shift;
+import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.enums.ShiftCategory;
 import com.java6.springboot.internflow.enums.UserRole;
+import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ShiftRepository;
 import java.time.LocalTime;
@@ -17,11 +19,13 @@ public class DataInitializer implements CommandLineRunner {
 
     private final ShiftRepository shiftRepository;
     private final RolePolicyRepository rolePolicyRepository;
+    private final AppUserRepository appUserRepository;
 
     @Override
     public void run(String... args) {
         seedShifts();
         seedRolePolicies();
+        seedAdminUser();
     }
 
     private void seedShifts() {
@@ -32,14 +36,20 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedRolePolicies() {
-        createPolicyIfMissing(UserRole.INTERN, 2, 6, 60, 10);
-        createPolicyIfMissing(UserRole.TEAM_LEADER, 3, 9, 90, 10);
-        createPolicyIfMissing(UserRole.MANAGER, 3, 9, 90, 10);
-        createPolicyIfMissing(UserRole.ADMIN, 3, 9, 90, 10);
+        createOrUpdatePolicy(UserRole.INTERN, 2, 6, 60, 10, 6, 1);
+        createOrUpdatePolicy(UserRole.TEAM_LEADER, 0, 0, 0, 0, 0, 0);
+        createOrUpdatePolicy(UserRole.MANAGER, 0, 0, 0, 0, 0, 0);
+        createOrUpdatePolicy(UserRole.ADMIN, 0, 0, 0, 0, 0, 0);
     }
 
     private void createShiftIfMissing(String code, String name, LocalTime startTime, LocalTime endTime) {
-        if (shiftRepository.existsByCode(code)) {
+        var existingShift = shiftRepository.findByCode(code);
+        if (existingShift.isPresent()) {
+            Shift shift = existingShift.get();
+            if (shift.getMaxParticipants() != 9) {
+                shift.setMaxParticipants(9);
+                shiftRepository.save(shift);
+            }
             return;
         }
         shiftRepository.save(Shift.builder()
@@ -48,17 +58,29 @@ public class DataInitializer implements CommandLineRunner {
                 .startTime(startTime)
                 .endTime(endTime)
                 .category(ShiftCategory.COMPANY)
+                .maxParticipants(9)
                 .build());
     }
 
-    private void createPolicyIfMissing(
+    private void createOrUpdatePolicy(
             UserRole role,
             int maxShiftsPerDay,
             int targetShiftsPerWeek,
             int requiredCompanyShifts,
-            int requiredHomeShifts
+            int requiredHomeShifts,
+            int nightShiftBonusThreshold,
+            int nightShiftBonusAmount
     ) {
-        if (rolePolicyRepository.existsByRole(role)) {
+        var existingPolicy = rolePolicyRepository.findByRole(role);
+        if (existingPolicy.isPresent()) {
+            RolePolicy policy = existingPolicy.get();
+            policy.setMaxShiftsPerDay(maxShiftsPerDay);
+            policy.setTargetShiftsPerWeek(targetShiftsPerWeek);
+            policy.setRequiredCompanyShifts(requiredCompanyShifts);
+            policy.setRequiredHomeShifts(requiredHomeShifts);
+            policy.setNightShiftBonusThreshold(nightShiftBonusThreshold);
+            policy.setNightShiftBonusAmount(nightShiftBonusAmount);
+            rolePolicyRepository.save(policy);
             return;
         }
         rolePolicyRepository.save(RolePolicy.builder()
@@ -67,6 +89,27 @@ public class DataInitializer implements CommandLineRunner {
                 .targetShiftsPerWeek(targetShiftsPerWeek)
                 .requiredCompanyShifts(requiredCompanyShifts)
                 .requiredHomeShifts(requiredHomeShifts)
+                .nightShiftBonusThreshold(nightShiftBonusThreshold)
+                .nightShiftBonusAmount(nightShiftBonusAmount)
                 .build());
+    }
+
+    private void seedAdminUser() {
+        String adminEmail = "tranthienloc21102005@gmail.com";
+        appUserRepository.findByEmail(adminEmail).ifPresentOrElse(
+                user -> {
+                    if (user.getRole() != UserRole.ADMIN) {
+                        user.setRole(UserRole.ADMIN);
+                    }
+                    user.setActive(true);
+                    appUserRepository.save(user);
+                },
+                () -> appUserRepository.save(AppUser.builder()
+                        .email(adminEmail)
+                        .fullName("Tran Thien Loc")
+                        .role(UserRole.ADMIN)
+                        .active(true)
+                        .build())
+        );
     }
 }

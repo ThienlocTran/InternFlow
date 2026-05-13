@@ -9,8 +9,10 @@ public record UserResponse(
         String email,
         String fullName,
         String studentCode,
+        String studentClass,
         String school,
         String phone,
+        InternshipCohortResponse cohort,
         UserRole role,
         boolean active
 ) {
@@ -21,10 +23,12 @@ public record UserResponse(
                 user.getEmail(),
                 user.getFullName(),
                 user.getStudentCode(),
+                user.getStudentClass(),
                 user.getSchool(),
                 user.getPhone(),
+                InternshipCohortResponse.from(user.getCohort()),
                 user.getRole(),
-                user.isActive()
+                Boolean.TRUE.equals(user.getActive())
         );
     }
 }

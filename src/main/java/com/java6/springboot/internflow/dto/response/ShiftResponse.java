@@ -12,6 +12,7 @@ public record ShiftResponse(
         LocalTime startTime,
         LocalTime endTime,
         ShiftCategory category,
+        int maxParticipants,
         boolean active
 ) {
 
@@ -23,6 +24,7 @@ public record ShiftResponse(
                 shift.getStartTime(),
                 shift.getEndTime(),
                 shift.getCategory(),
+                shift.getMaxParticipants(),
                 shift.isActive()
         );
     }

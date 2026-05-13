@@ -48,6 +48,10 @@ public class Shift {
     private ShiftCategory category = ShiftCategory.COMPANY;
 
     @Builder.Default
+    @Column(name = "max_participants", nullable = false, columnDefinition = "integer default 9")
+    private int maxParticipants = 9;
+
+    @Builder.Default
     @Column(nullable = false)
     private boolean active = true;
 }

@@ -44,4 +44,10 @@ public class RolePolicy {
 
     @Column(name = "required_home_shifts", nullable = false)
     private int requiredHomeShifts;
+
+    @Column(name = "night_shift_bonus_threshold", nullable = false, columnDefinition = "integer default 0")
+    private int nightShiftBonusThreshold = 0;
+
+    @Column(name = "night_shift_bonus_amount", nullable = false, columnDefinition = "integer default 0")
+    private int nightShiftBonusAmount = 0;
 }
