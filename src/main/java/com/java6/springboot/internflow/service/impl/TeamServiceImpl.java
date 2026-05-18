@@ -2,11 +2,15 @@ package com.java6.springboot.internflow.service.impl;
 
 import com.java6.springboot.internflow.dto.request.AddTeamMemberRequest;
 import com.java6.springboot.internflow.dto.request.TeamRequest;
+import com.java6.springboot.internflow.dto.response.MemberAttendanceDetailResponse;
+import com.java6.springboot.internflow.dto.response.ReportJournalSummaryResponse;
 import com.java6.springboot.internflow.dto.response.ScheduleRegistrationResponse;
 import com.java6.springboot.internflow.dto.response.ShiftPeerResponse;
+import com.java6.springboot.internflow.dto.response.TeamMemberDetailResponse;
 import com.java6.springboot.internflow.dto.response.TeamResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
+import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.entity.Team;
@@ -16,6 +20,7 @@ import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
+import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.TeamMemberRepository;
 import com.java6.springboot.internflow.repository.TeamRepository;
@@ -38,6 +43,7 @@ public class TeamServiceImpl implements TeamService {
     private final TeamMemberRepository teamMemberRepository;
     private final AppUserRepository appUserRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
+    private final AttendanceRepository attendanceRepository;
 
     @Override
     @Transactional
@@ -138,6 +144,76 @@ public class TeamServiceImpl implements TeamService {
                         schedules.stream().map(ScheduleRegistrationResponse::from).toList()
                 ))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TeamMemberDetailResponse getMemberDetail(UUID leaderId, UUID memberId, LocalDate startDate, LocalDate endDate) {
+        if (leaderId == null || memberId == null) {
+            throw new BusinessException("Leader id va member id la bat buoc");
+        }
+
+        // Verify leader role
+        AppUser leader = findUser(leaderId);
+        if (leader.getRole() != UserRole.TEAM_LEADER) {
+            throw new BusinessException("Chi nhom truong moi xem duoc chi tiet thanh vien");
+        }
+
+        // Get member info
+        AppUser member = findUser(memberId);
+
+        // Set default date range if not provided (last 30 days)
+        LocalDate effectiveEndDate = endDate != null ? endDate : LocalDate.now();
+        LocalDate effectiveStartDate = startDate != null ? startDate : effectiveEndDate.minusDays(30);
+
+        // Get schedule registrations
+        List<ScheduleRegistration> scheduleRegistrations = scheduleRegistrationRepository
+                .findByUserAndScheduleDateBetweenOrderByScheduleDateAscShift_StartTimeAsc(
+                        member,
+                        effectiveStartDate,
+                        effectiveEndDate
+                );
+
+        // Get attendance records
+        List<Attendance> attendances = attendanceRepository
+                .findByUserAndAttendanceDateBetweenOrderByAttendanceDateDescShift_StartTimeAsc(
+                        member,
+                        effectiveStartDate,
+                        effectiveEndDate
+                );
+
+        // Calculate report journal summary
+        int totalPagesWritten = attendances.stream()
+                .mapToInt(Attendance::getReportPageCount)
+                .sum();
+
+        long totalDaysWithReport = attendances.stream()
+                .filter(a -> a.getReportPageCount() > 0)
+                .count();
+
+        long totalDaysWithoutReport = attendances.stream()
+                .filter(a -> a.getReportPageCount() == 0)
+                .count();
+
+        LocalDate lastReportDate = attendances.stream()
+                .filter(a -> a.getReportPageCount() > 0)
+                .map(Attendance::getAttendanceDate)
+                .max(LocalDate::compareTo)
+                .orElse(null);
+
+        ReportJournalSummaryResponse reportSummary = new ReportJournalSummaryResponse(
+                totalPagesWritten,
+                (int) totalDaysWithReport,
+                (int) totalDaysWithoutReport,
+                lastReportDate
+        );
+
+        return new TeamMemberDetailResponse(
+                UserResponse.from(member),
+                scheduleRegistrations.stream().map(ScheduleRegistrationResponse::from).toList(),
+                attendances.stream().map(MemberAttendanceDetailResponse::from).toList(),
+                reportSummary
+        );
     }
 
     private Team findTeam(UUID id) {
