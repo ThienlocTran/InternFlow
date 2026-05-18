@@ -104,6 +104,49 @@ public class UserServiceImpl implements UserService {
                 .toList();
     }
 
+    @Override
+    @Transactional
+    public UserResponse updateRole(UUID userId, UserRole newRole) {
+        if (userId == null) {
+            throw new BusinessException("User id la bat buoc");
+        }
+        if (newRole == null) {
+            throw new BusinessException("Role moi la bat buoc");
+        }
+
+        AppUser user = findUser(userId);
+        
+        // Prevent changing role of admin users
+        if (user.getRole() == UserRole.ADMIN) {
+            throw new BusinessException("Khong the thay doi role cua admin");
+        }
+        
+        // Prevent setting role to ADMIN through this endpoint
+        if (newRole == UserRole.ADMIN) {
+            throw new BusinessException("Khong the set role thanh ADMIN qua endpoint nay");
+        }
+
+        // Validate role transition
+        UserRole currentRole = user.getRole();
+        if (currentRole == newRole) {
+            throw new BusinessException("User da co role nay roi");
+        }
+
+        // Only allow INTERN <-> TEAM_LEADER transitions (and MANAGER if needed)
+        if (!isValidRoleTransition(currentRole, newRole)) {
+            throw new BusinessException("Khong the chuyen tu " + currentRole + " sang " + newRole);
+        }
+
+        user.setRole(newRole);
+        return UserResponse.from(appUserRepository.save(user));
+    }
+
+    private boolean isValidRoleTransition(UserRole from, UserRole to) {
+        // Allow transitions between INTERN, TEAM_LEADER, and MANAGER
+        Set<UserRole> allowedRoles = Set.of(UserRole.INTERN, UserRole.TEAM_LEADER, UserRole.MANAGER);
+        return allowedRoles.contains(from) && allowedRoles.contains(to);
+    }
+
     private AppUser findUser(UUID id) {
         return appUserRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay user"));

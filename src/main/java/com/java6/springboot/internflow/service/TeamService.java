@@ -5,6 +5,7 @@ import com.java6.springboot.internflow.dto.request.TeamRequest;
 import com.java6.springboot.internflow.dto.response.TeamResponse;
 import com.java6.springboot.internflow.dto.response.ShiftPeerResponse;
 import com.java6.springboot.internflow.dto.response.TeamMemberDetailResponse;
+import com.java6.springboot.internflow.dto.response.TeamMemberFullDetailResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import java.time.LocalDate;
 import java.util.List;
@@ -21,4 +22,6 @@ public interface TeamService {
     List<ShiftPeerResponse> getLeaderShiftPeers(UUID leaderId, LocalDate date);
 
     TeamMemberDetailResponse getMemberDetail(UUID leaderId, UUID memberId, LocalDate startDate, LocalDate endDate);
+
+    TeamMemberFullDetailResponse getMemberFullDetail(UUID leaderId, UUID memberId, LocalDate date);
 }

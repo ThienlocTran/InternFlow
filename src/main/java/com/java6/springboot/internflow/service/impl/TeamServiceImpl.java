@@ -2,11 +2,14 @@ package com.java6.springboot.internflow.service.impl;
 
 import com.java6.springboot.internflow.dto.request.AddTeamMemberRequest;
 import com.java6.springboot.internflow.dto.request.TeamRequest;
+import com.java6.springboot.internflow.dto.response.AttendanceResponse;
+import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.MemberAttendanceDetailResponse;
 import com.java6.springboot.internflow.dto.response.ReportJournalSummaryResponse;
 import com.java6.springboot.internflow.dto.response.ScheduleRegistrationResponse;
 import com.java6.springboot.internflow.dto.response.ShiftPeerResponse;
 import com.java6.springboot.internflow.dto.response.TeamMemberDetailResponse;
+import com.java6.springboot.internflow.dto.response.TeamMemberFullDetailResponse;
 import com.java6.springboot.internflow.dto.response.TeamResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
@@ -24,6 +27,8 @@ import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.TeamMemberRepository;
 import com.java6.springboot.internflow.repository.TeamRepository;
+import com.java6.springboot.internflow.service.AttendanceService;
+import com.java6.springboot.internflow.service.ReportJournalService;
 import com.java6.springboot.internflow.service.TeamService;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -44,6 +49,8 @@ public class TeamServiceImpl implements TeamService {
     private final AppUserRepository appUserRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AttendanceRepository attendanceRepository;
+    private final AttendanceService attendanceService;
+    private final ReportJournalService reportJournalService;
 
     @Override
     @Transactional
@@ -213,6 +220,45 @@ public class TeamServiceImpl implements TeamService {
                 scheduleRegistrations.stream().map(ScheduleRegistrationResponse::from).toList(),
                 attendances.stream().map(MemberAttendanceDetailResponse::from).toList(),
                 reportSummary
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TeamMemberFullDetailResponse getMemberFullDetail(UUID leaderId, UUID memberId, LocalDate date) {
+        if (leaderId == null || memberId == null) {
+            throw new BusinessException("Leader id va member id la bat buoc");
+        }
+
+        // Verify leader role
+        AppUser leader = findUser(leaderId);
+        if (leader.getRole() != UserRole.TEAM_LEADER) {
+            throw new BusinessException("Chi nhom truong moi xem duoc chi tiet thanh vien");
+        }
+
+        // Get member info
+        AppUser member = findUser(memberId);
+        LocalDate targetDate = date != null ? date : LocalDate.now();
+
+        // Get schedule registrations for the date
+        List<ScheduleRegistration> scheduleRegistrations = scheduleRegistrationRepository
+                .findByUserAndScheduleDateAndStatus(member, targetDate, ScheduleRegistrationStatus.REGISTERED);
+
+        // Reuse existing AttendanceService to get full attendance with images
+        List<AttendanceResponse> attendances = attendanceService.getUserAttendances(memberId, targetDate);
+
+        // Reuse existing ReportJournalService to get report entries
+        List<DailyReportEntryResponse> reportEntries = reportJournalService.getEntriesByDate(targetDate)
+                .stream()
+                .filter(entry -> entry.document().user().id().equals(memberId))
+                .toList();
+
+        return new TeamMemberFullDetailResponse(
+                UserResponse.from(member),
+                targetDate,
+                scheduleRegistrations.stream().map(ScheduleRegistrationResponse::from).toList(),
+                attendances,
+                reportEntries
         );
     }
 

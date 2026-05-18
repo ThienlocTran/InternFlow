@@ -5,6 +5,7 @@ import com.java6.springboot.internflow.dto.request.AddTeamMemberRequest;
 import com.java6.springboot.internflow.dto.request.TeamRequest;
 import com.java6.springboot.internflow.dto.response.ShiftPeerResponse;
 import com.java6.springboot.internflow.dto.response.TeamMemberDetailResponse;
+import com.java6.springboot.internflow.dto.response.TeamMemberFullDetailResponse;
 import com.java6.springboot.internflow.dto.response.TeamResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.service.TeamService;
@@ -62,6 +63,15 @@ public class TeamController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
         return ApiResponse.ok("Lay chi tiet thanh vien thanh cong", teamService.getMemberDetail(leaderId, memberId, startDate, endDate));
+    }
+
+    @GetMapping("/member-full-detail")
+    public ApiResponse<TeamMemberFullDetailResponse> getMemberFullDetail(
+            @RequestParam UUID leaderId,
+            @RequestParam UUID memberId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        return ApiResponse.ok("Lay chi tiet day du thanh vien thanh cong", teamService.getMemberFullDetail(leaderId, memberId, date));
     }
 }
 
