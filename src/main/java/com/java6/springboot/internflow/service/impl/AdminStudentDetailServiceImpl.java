@@ -12,6 +12,7 @@ import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.ReportDocument;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.enums.AttendanceImageType;
+import com.java6.springboot.internflow.enums.AttendanceImagePhase;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.NotFoundException;
@@ -24,6 +25,7 @@ import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.service.AdminStudentDetailService;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -154,6 +156,8 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
                 + countImages(images, AttendanceImageType.GROUP);
         int missingPersonal = Math.max(0, requiredPersonal - uploadedPersonal);
         int missingGroup = Math.max(0, requiredGroup - uploadedGroup);
+        List<String> missingPersonalSlots = missingPersonalSlots(attendance, images);
+        List<String> missingGroupSlots = missingGroupSlots(attendance, images);
         return new AttendanceAuditResponse(
                 attendance.getId(),
                 attendance.getShift().getName(),
@@ -172,6 +176,8 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
                 attendance.getCheckinGroupImageUrl(),
                 attendance.getCheckoutTimemarkImageUrl(),
                 attendance.getCheckoutGroupImageUrl(),
+                missingPersonalSlots,
+                missingGroupSlots,
                 images
         );
     }
@@ -199,5 +205,53 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
             count++;
         }
         return count;
+    }
+
+    private List<String> missingPersonalSlots(Attendance attendance, List<AttendanceImageResponse> images) {
+        List<String> missing = new ArrayList<>();
+        if (!StringUtils.hasText(attendance.getCheckinTimemarkImageUrl())) {
+            missing.add("ảnh TimeMark vào ca");
+        }
+        LocalTime cursor = attendance.getShift().getStartTime().plusMinutes(30);
+        while (cursor.isBefore(attendance.getShift().getEndTime())) {
+            LocalTime expectedTime = cursor;
+            boolean uploaded = images.stream().anyMatch(image ->
+                    image.imageType() == AttendanceImageType.PERSONAL_TIMEMARK
+                            && image.phase() == AttendanceImagePhase.DURING_SHIFT
+                            && image.expectedTime().equals(expectedTime)
+            );
+            if (!uploaded) {
+                missing.add(expectedTime.toString().substring(0, 5));
+            }
+            cursor = cursor.plusMinutes(30);
+        }
+        if (!StringUtils.hasText(attendance.getCheckoutTimemarkImageUrl())) {
+            missing.add("ảnh TimeMark tan ca");
+        }
+        return missing;
+    }
+
+    private List<String> missingGroupSlots(Attendance attendance, List<AttendanceImageResponse> images) {
+        List<String> missing = new ArrayList<>();
+        if (!StringUtils.hasText(attendance.getCheckinGroupImageUrl())) {
+            missing.add("ảnh nhóm vào ca");
+        }
+        LocalTime cursor = attendance.getShift().getStartTime().plusHours(1);
+        while (cursor.isBefore(attendance.getShift().getEndTime())) {
+            LocalTime expectedTime = cursor;
+            boolean uploaded = images.stream().anyMatch(image ->
+                    image.imageType() == AttendanceImageType.GROUP
+                            && image.phase() == AttendanceImagePhase.DURING_SHIFT
+                            && image.expectedTime().equals(expectedTime)
+            );
+            if (!uploaded) {
+                missing.add("ảnh nhóm " + expectedTime.toString().substring(0, 5));
+            }
+            cursor = cursor.plusHours(1);
+        }
+        if (!StringUtils.hasText(attendance.getCheckoutGroupImageUrl())) {
+            missing.add("ảnh nhóm tan ca");
+        }
+        return missing;
     }
 }
