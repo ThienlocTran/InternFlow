@@ -11,6 +11,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.jpa.JpaSystemException;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -52,19 +54,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrity(DataIntegrityViolationException exception) {
         log.warn("Data integrity violation", exception);
-        String detail = rootCauseMessage(exception).toLowerCase();
-        String message;
-        if (detail.contains("uk_attendance_user_shift_date")) {
-            message = "Ban da checkin ca nay trong ngay roi.";
-        } else if (detail.contains("uk_attendance_image_slot")) {
-            message = "Moc anh nay da ton tai. He thong se cap nhat lai anh moi neu ban thu lai.";
-        } else if (detail.contains("not-null") && detail.contains("group_image")) {
-            message = "Anh nhom la tuy chon, nhung du lieu cu tren he thong dang chua dong bo. Vui long tai lai trang va thu lai.";
-        } else {
-            message = "Khong the luu du lieu vi thong tin bi trung hoac chua hop le.";
-        }
+        String message = persistenceMessage(exception);
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiResponse<>(false, message, null, Instant.now()));
+    }
+
+    @ExceptionHandler({JpaSystemException.class, TransactionSystemException.class})
+    public ResponseEntity<ApiResponse<Void>> handlePersistenceSystem(Exception exception) {
+        log.warn("Persistence system exception", exception);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiResponse<>(false, persistenceMessage(exception), null, Instant.now()));
     }
 
     @ExceptionHandler(Exception.class)
@@ -80,5 +79,22 @@ public class GlobalExceptionHandler {
             current = current.getCause();
         }
         return current.getMessage() == null ? "" : current.getMessage();
+    }
+
+    private String persistenceMessage(Throwable throwable) {
+        String detail = rootCauseMessage(throwable).toLowerCase();
+        if (detail.contains("uk_attendance_user_shift_date")) {
+            return "Ban da checkin ca nay trong ngay roi.";
+        }
+        if (detail.contains("uk_attendance_image_slot")) {
+            return "Moc anh nay da ton tai. He thong se cap nhat lai anh moi neu ban thu lai.";
+        }
+        if (detail.contains("not-null") && detail.contains("group_image")) {
+            return "Anh nhom la tuy chon, nhung du lieu cu tren he thong dang chua dong bo. Vui long tai lai trang va thu lai.";
+        }
+        if (detail.contains("value too long") || detail.contains("too long for type character varying(500)")) {
+            return "Du lieu anh hoac ghi chu qua dai de luu. Vui long thu lai voi du lieu ngan hon.";
+        }
+        return "Khong the luu du lieu vi thong tin bi trung hoac chua hop le.";
     }
 }
