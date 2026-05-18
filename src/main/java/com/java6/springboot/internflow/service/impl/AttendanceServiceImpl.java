@@ -82,7 +82,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .status(AttendanceStatus.CHECKED_IN)
                 .checkinTime(Instant.now())
                 .checkinTimemarkImageUrl(request.timemarkImageUrl().trim())
-                .checkinGroupImageUrl(trimToNull(request.groupImageUrl()))
+                .checkinGroupImageUrl(optionalImageValue(request.groupImageUrl()))
                 .checkinLatitude(request.latitude())
                 .checkinLongitude(request.longitude())
                 .note(trimToNull(request.note()))
@@ -110,7 +110,7 @@ public class AttendanceServiceImpl implements AttendanceService {
         attendance.setStatus(AttendanceStatus.CHECKED_OUT);
         attendance.setCheckoutTime(Instant.now());
         attendance.setCheckoutTimemarkImageUrl(request.timemarkImageUrl().trim());
-        attendance.setCheckoutGroupImageUrl(trimToNull(request.groupImageUrl()));
+        attendance.setCheckoutGroupImageUrl(optionalImageValue(request.groupImageUrl()));
         attendance.setCheckoutLatitude(request.latitude());
         attendance.setCheckoutLongitude(request.longitude());
         if (StringUtils.hasText(request.note())) {
@@ -139,8 +139,8 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (StringUtils.hasText(request.timemarkImageUrl())) {
             attendance.setCheckoutTimemarkImageUrl(request.timemarkImageUrl().trim());
         }
-        if (StringUtils.hasText(request.groupImageUrl())) {
-            attendance.setCheckoutGroupImageUrl(request.groupImageUrl().trim());
+        if (request.groupImageUrl() != null) {
+            attendance.setCheckoutGroupImageUrl(optionalImageValue(request.groupImageUrl()));
         }
 
         return AttendanceResponse.from(attendanceRepository.save(attendance));
@@ -235,6 +235,15 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    /**
+     * Ảnh nhóm là tùy chọn. Trả về chuỗi rỗng thay vì null để tương thích với
+     * các database cũ từng tạo cột ảnh nhóm là NOT NULL; phần audit vẫn coi
+     * chuỗi rỗng là "chưa có ảnh" nhờ StringUtils.hasText(...).
+     */
+    private String optionalImageValue(String value) {
+        return StringUtils.hasText(value) ? value.trim() : "";
     }
 
     private void validateImageRequest(UUID attendanceId, AttendanceImageRequest request) {
