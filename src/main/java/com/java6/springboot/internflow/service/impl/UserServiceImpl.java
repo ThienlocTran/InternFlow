@@ -23,7 +23,8 @@ public class UserServiceImpl implements UserService {
 
     private static final Set<String> ADMIN_EMAILS = Set.of(
             "tranthienloc.nina@gmail.com",
-            "tranthienloc21102005@gmail.com"
+            "tranthienloc21102005@gmail.com",
+            "daonguyenquocviet9190@gmail.com"
     );
 
     private final AppUserRepository appUserRepository;

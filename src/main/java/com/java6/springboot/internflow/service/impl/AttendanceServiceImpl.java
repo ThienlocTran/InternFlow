@@ -121,6 +121,32 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
+    @Transactional
+    public AttendanceResponse saveCheckoutDraft(UUID attendanceId, CheckoutRequest request) {
+        if (attendanceId == null) {
+            throw new BusinessException("Attendance id la bat buoc");
+        }
+        if (request == null || (!StringUtils.hasText(request.timemarkImageUrl()) && !StringUtils.hasText(request.groupImageUrl()))) {
+            throw new BusinessException("Can co it nhat mot anh checkout de luu tam");
+        }
+
+        Attendance attendance = attendanceRepository.findById(attendanceId)
+                .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+        if (attendance.getStatus() != AttendanceStatus.CHECKED_IN) {
+            throw new BusinessException("Chi duoc luu anh tam khi dang trong ca");
+        }
+
+        if (StringUtils.hasText(request.timemarkImageUrl())) {
+            attendance.setCheckoutTimemarkImageUrl(request.timemarkImageUrl().trim());
+        }
+        if (StringUtils.hasText(request.groupImageUrl())) {
+            attendance.setCheckoutGroupImageUrl(request.groupImageUrl().trim());
+        }
+
+        return AttendanceResponse.from(attendanceRepository.save(attendance));
+    }
+
+    @Override
     public List<AttendanceResponse> getUserAttendances(UUID userId, LocalDate date) {
         if (userId == null) {
             throw new BusinessException("User id la bat buoc");
@@ -145,15 +171,22 @@ public class AttendanceServiceImpl implements AttendanceService {
         validateImageRequest(attendanceId, request);
         Attendance attendance = findAttendance(attendanceId);
 
-        AttendanceImage image = AttendanceImage.builder()
-                .attendance(attendance)
-                .imageType(request.imageType())
-                .phase(request.phase())
-                .expectedTime(request.expectedTime())
-                .imageUrl(request.imageUrl().trim())
-                .displayOrder(request.displayOrder() == null ? 0 : request.displayOrder())
-                .note(trimToNull(request.note()))
-                .build();
+        AttendanceImage image = attendanceImageRepository
+                .findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
+                        attendanceId,
+                        request.imageType(),
+                        request.phase(),
+                        request.expectedTime()
+                )
+                .orElseGet(() -> AttendanceImage.builder()
+                        .attendance(attendance)
+                        .imageType(request.imageType())
+                        .phase(request.phase())
+                        .expectedTime(request.expectedTime())
+                        .build());
+        image.setImageUrl(request.imageUrl().trim());
+        image.setDisplayOrder(request.displayOrder() == null ? 0 : request.displayOrder());
+        image.setNote(trimToNull(request.note()));
 
         return AttendanceImageResponse.from(attendanceImageRepository.save(image));
     }
