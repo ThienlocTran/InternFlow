@@ -2,12 +2,11 @@ package com.java6.springboot.internflow.scheduler;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -40,12 +39,12 @@ public class KeepAliveScheduler {
     @Value("${app.keep-alive.endpoint:/api/health}")
     private String keepAliveEndpoint;
 
-    public KeepAliveScheduler(RestTemplateBuilder restTemplateBuilder) {
+    public KeepAliveScheduler() {
         // Timeout 10 giây để tránh block thread scheduler quá lâu
-        this.restTemplate = restTemplateBuilder
-                .connectTimeout(Duration.ofSeconds(10))
-                .readTimeout(Duration.ofSeconds(10))
-                .build();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10000); // 10 seconds
+        factory.setReadTimeout(10000); // 10 seconds
+        this.restTemplate = new RestTemplate(factory);
     }
 
     /**
