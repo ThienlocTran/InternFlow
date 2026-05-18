@@ -9,6 +9,7 @@ import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
+import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
@@ -110,13 +111,14 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                             shift,
                             date
                     );
-                    int count = participants.size();
+                    // Chỉ đếm slot của INTERN — TEAM_LEADER không chiếm slot
+                    int billableCount = (int) countBillableParticipants(shift, date);
                     return new ScheduleCapacityResponse(
                             date,
                             shift.getId(),
-                            count,
+                            billableCount,
                             shift.getMaxParticipants(),
-                            count >= shift.getMaxParticipants(),
+                            billableCount >= shift.getMaxParticipants(),
                             participants
                     );
                 }))
@@ -146,9 +148,13 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
             throw new BusinessException("Ban da dang ky " + shift.getName() + " trong ngay nay");
         }
 
-        int shiftUserCount = getRegisteredParticipants(shift, request.scheduleDate()).size();
-        if (shiftUserCount >= shift.getMaxParticipants()) {
-            throw new BusinessException(shift.getName() + " da du " + shift.getMaxParticipants() + " ban");
+        // TEAM_LEADER không chiếm slot — chỉ kiểm tra giới hạn với INTERN
+        boolean isTeamLeader = UserRole.TEAM_LEADER.equals(user.getRole());
+        if (!isTeamLeader) {
+            long billableCount = countBillableParticipants(shift, request.scheduleDate());
+            if (billableCount >= shift.getMaxParticipants()) {
+                throw new BusinessException(shift.getName() + " da du " + shift.getMaxParticipants() + " ban");
+            }
         }
 
         if (existingRegistration.isPresent()) {
@@ -179,6 +185,24 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         return users.values().stream()
                 .map(UserResponse::from)
                 .toList();
+    }
+
+    /**
+     * Đếm số người đăng ký "có tính slot" (loại trừ TEAM_LEADER).
+     * TEAM_LEADER được phép đăng ký ca nhưng không chiếm slot trong giới hạn maxParticipants.
+     */
+    private long countBillableParticipants(Shift shift, LocalDate scheduleDate) {
+        return scheduleRegistrationRepository
+                .findByShiftAndScheduleDateAndStatusOrderByUser_FullNameAsc(
+                        shift,
+                        scheduleDate,
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .stream()
+                .filter(reg -> !UserRole.TEAM_LEADER.equals(reg.getUser().getRole()))
+                .map(reg -> reg.getUser().getId())
+                .distinct()
+                .count();
     }
 
     private boolean isAdjacent(List<Shift> shifts) {
