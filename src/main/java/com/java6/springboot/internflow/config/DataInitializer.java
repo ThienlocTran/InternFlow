@@ -47,23 +47,6 @@ public class DataInitializer implements CommandLineRunner {
     private void createShiftIfMissing(String code, String name, LocalTime startTime, LocalTime endTime) {
         var existingShift = shiftRepository.findByCode(code);
         if (existingShift.isPresent()) {
-            Shift shift = existingShift.get();
-            boolean changed = false;
-            if (!startTime.equals(shift.getStartTime())) {
-                shift.setStartTime(startTime);
-                changed = true;
-            }
-            if (!endTime.equals(shift.getEndTime())) {
-                shift.setEndTime(endTime);
-                changed = true;
-            }
-            if (shift.getMaxParticipants() != 9) {
-                shift.setMaxParticipants(9);
-                changed = true;
-            }
-            if (changed) {
-                shiftRepository.save(shift);
-            }
             return;
         }
         shiftRepository.save(Shift.builder()

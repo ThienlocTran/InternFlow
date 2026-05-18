@@ -28,6 +28,7 @@ import tools.jackson.databind.ObjectMapper;
 public class CloudinaryImageUploadServiceImpl implements ImageUploadService {
 
     private static final String FOLDER = "internflow/attendance";
+    private static final String INCOMING_TRANSFORMATION = "c_limit,w_1600,h_1600,q_auto";
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -47,7 +48,12 @@ public class CloudinaryImageUploadServiceImpl implements ImageUploadService {
         validateCloudinaryConfig();
 
         long timestamp = Instant.now().getEpochSecond();
-        String signature = sha1("folder=" + FOLDER + "&timestamp=" + timestamp + apiSecret);
+        String signature = sha1(
+                "folder=" + FOLDER
+                        + "&timestamp=" + timestamp
+                        + "&transformation=" + INCOMING_TRANSFORMATION
+                        + apiSecret
+        );
         String boundary = "InternFlowBoundary" + UUID.randomUUID();
 
         try {
@@ -98,6 +104,7 @@ public class CloudinaryImageUploadServiceImpl implements ImageUploadService {
         writeFormField(output, boundary, "api_key", apiKey);
         writeFormField(output, boundary, "timestamp", String.valueOf(timestamp));
         writeFormField(output, boundary, "folder", FOLDER);
+        writeFormField(output, boundary, "transformation", INCOMING_TRANSFORMATION);
         writeFormField(output, boundary, "signature", signature);
         writeFileField(output, boundary, "file", file);
         output.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
