@@ -21,6 +21,8 @@ public record AttendanceAuditResponse(
         String checkinGroupImageUrl,
         String checkoutTimemarkImageUrl,
         String checkoutGroupImageUrl,
+        List<String> missingPersonalSlots,
+        List<String> missingGroupSlots,
         List<AttendanceImageResponse> images
 ) {
 }

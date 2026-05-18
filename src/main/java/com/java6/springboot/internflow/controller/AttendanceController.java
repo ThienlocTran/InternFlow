@@ -48,6 +48,14 @@ public class AttendanceController {
         return ApiResponse.ok("Checkout thanh cong", attendanceService.checkout(attendanceId, request));
     }
 
+    @PostMapping("/{attendanceId}/checkout-draft")
+    public ApiResponse<AttendanceResponse> saveCheckoutDraft(
+            @PathVariable UUID attendanceId,
+            @RequestBody CheckoutRequest request
+    ) {
+        return ApiResponse.ok("Luu anh checkout tam thanh cong", attendanceService.saveCheckoutDraft(attendanceId, request));
+    }
+
     @PostMapping("/{attendanceId}/images")
     public ApiResponse<AttendanceImageResponse> addImage(
             @PathVariable UUID attendanceId,

@@ -15,6 +15,8 @@ public interface AttendanceService {
 
     AttendanceResponse checkout(UUID attendanceId, CheckoutRequest request);
 
+    AttendanceResponse saveCheckoutDraft(UUID attendanceId, CheckoutRequest request);
+
     List<AttendanceResponse> getUserAttendances(UUID userId, LocalDate date);
 
     AttendanceImageResponse addImage(UUID attendanceId, AttendanceImageRequest request);

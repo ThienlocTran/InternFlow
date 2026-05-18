@@ -11,6 +11,7 @@ import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.InternshipCohort;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.enums.AttendanceImageType;
+import com.java6.springboot.internflow.enums.AttendanceImagePhase;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
@@ -22,6 +23,8 @@ import com.java6.springboot.internflow.repository.InternshipCohortRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.service.InternshipCohortService;
 import java.time.Duration;
+import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -123,6 +126,8 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
         int missingPersonal = Math.max(0, requiredPersonal - uploadedPersonal);
         int missingGroup = Math.max(0, requiredGroup - uploadedGroup);
         int reportPages = attendance.getReportPageCount();
+        List<String> missingPersonalSlots = missingPersonalSlots(attendance, images);
+        List<String> missingGroupSlots = missingGroupSlots(attendance, images);
 
         return new AttendanceAuditResponse(
                 attendance.getId(),
@@ -142,6 +147,8 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
                 attendance.getCheckinGroupImageUrl(),
                 attendance.getCheckoutTimemarkImageUrl(),
                 attendance.getCheckoutGroupImageUrl(),
+                missingPersonalSlots,
+                missingGroupSlots,
                 images
         );
     }
@@ -169,6 +176,54 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
             count++;
         }
         return count;
+    }
+
+    private List<String> missingPersonalSlots(Attendance attendance, List<AttendanceImageResponse> images) {
+        List<String> missing = new ArrayList<>();
+        if (!StringUtils.hasText(attendance.getCheckinTimemarkImageUrl())) {
+            missing.add("ảnh TimeMark vào ca");
+        }
+        LocalTime cursor = attendance.getShift().getStartTime().plusMinutes(30);
+        while (cursor.isBefore(attendance.getShift().getEndTime())) {
+            LocalTime expectedTime = cursor;
+            boolean uploaded = images.stream().anyMatch(image ->
+                    image.imageType() == AttendanceImageType.PERSONAL_TIMEMARK
+                            && image.phase() == AttendanceImagePhase.DURING_SHIFT
+                            && image.expectedTime().equals(expectedTime)
+            );
+            if (!uploaded) {
+                missing.add(expectedTime.toString().substring(0, 5));
+            }
+            cursor = cursor.plusMinutes(30);
+        }
+        if (!StringUtils.hasText(attendance.getCheckoutTimemarkImageUrl())) {
+            missing.add("ảnh TimeMark tan ca");
+        }
+        return missing;
+    }
+
+    private List<String> missingGroupSlots(Attendance attendance, List<AttendanceImageResponse> images) {
+        List<String> missing = new ArrayList<>();
+        if (!StringUtils.hasText(attendance.getCheckinGroupImageUrl())) {
+            missing.add("ảnh nhóm vào ca");
+        }
+        LocalTime cursor = attendance.getShift().getStartTime().plusHours(1);
+        while (cursor.isBefore(attendance.getShift().getEndTime())) {
+            LocalTime expectedTime = cursor;
+            boolean uploaded = images.stream().anyMatch(image ->
+                    image.imageType() == AttendanceImageType.GROUP
+                            && image.phase() == AttendanceImagePhase.DURING_SHIFT
+                            && image.expectedTime().equals(expectedTime)
+            );
+            if (!uploaded) {
+                missing.add("ảnh nhóm " + expectedTime.toString().substring(0, 5));
+            }
+            cursor = cursor.plusHours(1);
+        }
+        if (!StringUtils.hasText(attendance.getCheckoutGroupImageUrl())) {
+            missing.add("ảnh nhóm tan ca");
+        }
+        return missing;
     }
 
     private void validateRequest(InternshipCohortRequest request) {
