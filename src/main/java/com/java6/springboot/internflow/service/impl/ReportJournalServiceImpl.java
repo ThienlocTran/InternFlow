@@ -32,16 +32,22 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import java.io.ByteArrayOutputStream;
+import java.net.URLDecoder;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +69,8 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private static final int DAY_SHIFT_REQUIRED_PAGES = 8;
     private static final int NIGHT_SHIFT_REQUIRED_PAGES = 5;
     private static final int WORDS_PER_PAGE_ESTIMATE = 450;
+    private static final int MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_MAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
     private static final DateTimeFormatter SUBJECT_DATE_FORMAT = DateTimeFormatter.ofPattern("d.M.yy");
 
     private final AppUserRepository appUserRepository;
@@ -169,7 +177,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public MailSubmitResponse submitDailyMail(SubmitDailyReportMailRequest request) {
         if (request == null || request.userId() == null || request.workDate() == null) {
             throw new BusinessException("User id va ngay gui mail la bat buoc");
@@ -185,6 +193,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         }
         ReportDocument document = reportDocumentRepository.findByUser(user)
                 .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+        refreshDocument(document);
         ReportEntry dailyEntry = reportEntryRepository.findByDocumentAndWorkDate(document, request.workDate())
                 .orElseThrow(() -> new BusinessException("Ngay nay chua co noi dung nhat ky"));
         if (dailyEntry.getPageCount() < dailyEntry.getRequiredPages()) {
@@ -200,12 +209,20 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 user,
                 request.workDate()
         );
-        String subject = user.getFullName() + ", duoc " + document.getCompletedShiftCount()
-                + " ca, ngay " + request.workDate().format(SUBJECT_DATE_FORMAT);
+        int completedShiftCount = document.getCompletedShiftCount();
+        String subject = user.getFullName() + ", được " + completedShiftCount
+                + " ca, ngày " + request.workDate().format(SUBJECT_DATE_FORMAT);
         String attachmentName = fileName(user, document.getCompletedShiftCount()) + ".docx";
         byte[] docxBytes = buildJournalDocx(document);
+        List<MailAttachment> attachments = new ArrayList<>();
+        attachments.add(new MailAttachment(
+                attachmentName,
+                docxBytes,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ));
+        attachments.addAll(buildAttendanceImageAttachments(attendances));
 
-        sendMailWithGmailApi(user, request.googleAccessToken(), subject, buildMailBody(user, dailyEntry, schedules, attendances), attachmentName, docxBytes);
+        sendMailWithGmailApi(user, request.googleAccessToken(), subject, buildMailBody(user, dailyEntry, schedules, attendances), attachments);
         return new MailSubmitResponse(reportMailTo, reportMailCc, subject, attachmentName);
     }
 
@@ -239,8 +256,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             String googleAccessToken,
             String subject,
             String body,
-            String attachmentName,
-            byte[] docxBytes
+            List<MailAttachment> attachments
     ) {
         try {
             MimeMessage message = new MimeMessage(Session.getInstance(new Properties()));
@@ -250,7 +266,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             helper.setCc(reportMailCc);
             helper.setSubject(subject);
             helper.setText(body, false);
-            helper.addAttachment(attachmentName, new ByteArrayResource(docxBytes));
+            for (MailAttachment attachment : attachments) {
+                helper.addAttachment(attachment.name(), new ByteArrayResource(attachment.bytes()), attachment.contentType());
+            }
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             message.writeTo(output);
             String rawMessage = Base64.getUrlEncoder().withoutPadding().encodeToString(output.toByteArray());
@@ -295,19 +313,19 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private byte[] buildJournalDocx(ReportDocument document) {
         try (XWPFDocument wordDocument = new XWPFDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             addHeading(wordDocument, fileName(document.getUser(), document.getCompletedShiftCount()));
-            addParagraph(wordDocument, "Ho ten: " + document.getUser().getFullName());
+            addParagraph(wordDocument, "Họ tên: " + document.getUser().getFullName());
             addParagraph(wordDocument, "Email: " + document.getUser().getEmail());
-            addParagraph(wordDocument, "SDT: " + nullToEmpty(document.getUser().getPhone()));
+            addParagraph(wordDocument, "SĐT: " + nullToEmpty(document.getUser().getPhone()));
             addParagraph(wordDocument, "MSSV: " + nullToEmpty(document.getUser().getStudentCode()));
-            addParagraph(wordDocument, "Lop: " + nullToEmpty(document.getUser().getStudentClass()));
-            addParagraph(wordDocument, "Truong: " + nullToEmpty(document.getUser().getSchool()));
+            addParagraph(wordDocument, "Lớp: " + nullToEmpty(document.getUser().getStudentClass()));
+            addParagraph(wordDocument, "Trường: " + nullToEmpty(document.getUser().getSchool()));
             addParagraph(wordDocument, "");
 
             reportEntryRepository.findByDocumentOrderByWorkDateAsc(document).forEach(entry -> {
                 addHeading(wordDocument, entry.getWorkDate() + " - " + nullToEmpty(entry.getShiftCodes()));
                 addParagraph(wordDocument, nullToEmpty(entry.getWorkTimeSummary()));
-                addParagraph(wordDocument, "So trang uoc tinh: " + entry.getPageCount() + "/" + entry.getRequiredPages());
-                addParagraph(wordDocument, "Tai lieu tham khao: " + nullToEmpty(entry.getReferenceLinks()));
+                addParagraph(wordDocument, "Số trang ước tính: " + entry.getPageCount() + "/" + entry.getRequiredPages());
+                addParagraph(wordDocument, "Tài liệu tham khảo: " + nullToEmpty(entry.getReferenceLinks()));
                 addParagraph(wordDocument, nullToEmpty(entry.getContent()));
                 addParagraph(wordDocument, "");
             });
@@ -326,29 +344,90 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             List<Attendance> attendances
     ) {
         StringBuilder body = new StringBuilder();
-        body.append("Ho ten: ").append(user.getFullName()).append('\n');
-        body.append("SDT: ").append(nullToEmpty(user.getPhone())).append('\n');
-        body.append("Ma so sinh vien: ").append(nullToEmpty(user.getStudentCode())).append('\n');
-        body.append("Lop: ").append(nullToEmpty(user.getStudentClass())).append('\n');
-        body.append("Truong: ").append(nullToEmpty(user.getSchool())).append('\n');
-        body.append("Thoi gian lam viec: ").append(workTimeSummary(schedules)).append("\n\n");
+        body.append("Họ tên: ").append(user.getFullName()).append('\n');
+        body.append("SĐT: ").append(nullToEmpty(user.getPhone())).append('\n');
+        body.append("Mã số sinh viên: ").append(nullToEmpty(user.getStudentCode())).append('\n');
+        body.append("Lớp: ").append(nullToEmpty(user.getStudentClass())).append('\n');
+        body.append("Trường: ").append(nullToEmpty(user.getSchool())).append('\n');
+        body.append("Ca đã làm hôm nay: ").append(shiftCodesCompact(schedules)).append('\n');
+        body.append("Thời gian làm việc: ").append(workTimeSummary(schedules)).append("\n\n");
 
-        body.append("Hinh diem danh:\n");
+        body.append("Hình điểm danh được đính kèm trong mail và liệt kê link bên dưới:\n");
         attendances.forEach(attendance -> {
             body.append("- ").append(attendance.getShift().getName()).append(":\n");
-            appendUrl(body, "  TimeMark vao ca", attendance.getCheckinTimemarkImageUrl());
-            appendUrl(body, "  Anh nhom vao ca", attendance.getCheckinGroupImageUrl());
+            appendUrl(body, "  TimeMark đầu giờ", attendance.getCheckinTimemarkImageUrl());
+            appendUrl(body, "  Ảnh nhóm đầu giờ", attendance.getCheckinGroupImageUrl());
             attendanceImageRepository.findByAttendanceIdOrderByExpectedTimeAscDisplayOrderAsc(attendance.getId())
                     .forEach(image -> appendUrl(body, "  " + imageLabel(image), image.getImageUrl()));
-            appendUrl(body, "  TimeMark tan ca", attendance.getCheckoutTimemarkImageUrl());
-            appendUrl(body, "  Anh nhom tan ca", attendance.getCheckoutGroupImageUrl());
+            appendUrl(body, "  TimeMark cuối ca", attendance.getCheckoutTimemarkImageUrl());
+            appendUrl(body, "  Ảnh nhóm cuối ca", attendance.getCheckoutGroupImageUrl());
         });
 
-        body.append("\nBao cao ngay: ").append(dailyEntry.getPageCount())
-                .append('/').append(dailyEntry.getRequiredPages()).append(" trang uoc tinh\n");
-        body.append("Tai lieu tham khao: ").append(nullToEmpty(dailyEntry.getReferenceLinks())).append('\n');
-        body.append("\nFile Word nhat ky thuc tap duoc dinh kem trong mail nay.\n");
+        body.append("\nBáo cáo ngày: ").append(dailyEntry.getPageCount())
+                .append('/').append(dailyEntry.getRequiredPages()).append(" trang ước tính\n");
+        body.append("Tài liệu tham khảo theo ca: ").append(nullToEmpty(dailyEntry.getReferenceLinks())).append('\n');
+        body.append("\nFile Word nhật ký thực tập được đính kèm trong mail này.\n");
         return body.toString();
+    }
+
+    private List<MailAttachment> buildAttendanceImageAttachments(List<Attendance> attendances) {
+        List<MailAttachment> attachments = new ArrayList<>();
+        int totalBytes = 0;
+        for (Attendance attendance : attendances) {
+            Map<String, String> images = attendanceImagesForMail(attendance);
+            for (Map.Entry<String, String> image : images.entrySet()) {
+                RemoteFile remoteFile = downloadRemoteFile(image.getValue());
+                if (remoteFile == null || remoteFile.bytes().length > MAX_IMAGE_ATTACHMENT_BYTES) {
+                    continue;
+                }
+                if (totalBytes + remoteFile.bytes().length > MAX_MAIL_ATTACHMENT_BYTES) {
+                    continue;
+                }
+                totalBytes += remoteFile.bytes().length;
+                attachments.add(new MailAttachment(image.getKey(), remoteFile.bytes(), remoteFile.contentType()));
+            }
+        }
+        return attachments;
+    }
+
+    private Map<String, String> attendanceImagesForMail(Attendance attendance) {
+        Map<String, String> images = new LinkedHashMap<>();
+        String shiftName = sanitizeFilePart(attendance.getShift().getName());
+        putImage(images, shiftName + "_TimeMark_dau_gio.jpg", attendance.getCheckinTimemarkImageUrl());
+        putImage(images, shiftName + "_Anh_nhom_dau_gio.jpg", attendance.getCheckinGroupImageUrl());
+        attendanceImageRepository.findByAttendanceIdOrderByExpectedTimeAscDisplayOrderAsc(attendance.getId())
+                .forEach(image -> putImage(
+                        images,
+                        shiftName + "_" + sanitizeFilePart(imageLabel(image)) + ".jpg",
+                        image.getImageUrl()
+                ));
+        putImage(images, shiftName + "_TimeMark_cuoi_ca.jpg", attendance.getCheckoutTimemarkImageUrl());
+        putImage(images, shiftName + "_Anh_nhom_cuoi_ca.jpg", attendance.getCheckoutGroupImageUrl());
+        return images;
+    }
+
+    private void putImage(Map<String, String> images, String name, String url) {
+        if (StringUtils.hasText(url) && !images.containsValue(url)) {
+            images.put(name, url);
+        }
+    }
+
+    private RemoteFile downloadRemoteFile(String url) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(12))
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return null;
+            }
+            String contentType = response.headers().firstValue("Content-Type").orElse("image/jpeg");
+            return new RemoteFile(response.body(), contentType);
+        } catch (Exception exception) {
+            return null;
+        }
     }
 
     private void appendUrl(StringBuilder body, String label, String url) {
@@ -358,7 +437,16 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     private String imageLabel(AttendanceImage image) {
-        return image.getImageType() + " " + image.getPhase() + " " + image.getExpectedTime();
+        String type = switch (image.getImageType()) {
+            case PERSONAL_TIMEMARK -> "TimeMark";
+            case GROUP -> "Ảnh nhóm";
+        };
+        String phase = switch (image.getPhase()) {
+            case CHECKIN -> "đầu giờ";
+            case DURING_SHIFT -> "giữa giờ";
+            case CHECKOUT -> "cuối ca";
+        };
+        return type + " " + phase + " " + formatTime(image.getExpectedTime());
     }
 
     private void addHeading(XWPFDocument document, String text) {
@@ -394,14 +482,34 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 .orElse("");
     }
 
+    private String shiftCodesCompact(List<ScheduleRegistration> schedules) {
+        String codes = schedules.stream()
+                .map(item -> {
+                    String name = item.getShift().getName();
+                    String number = name == null ? "" : name.replaceAll("\\D+", "");
+                    return StringUtils.hasText(number) ? number : name;
+                })
+                .filter(StringUtils::hasText)
+                .reduce((first, second) -> first + "+" + second)
+                .orElse("");
+        return StringUtils.hasText(codes) ? "ca " + codes : "";
+    }
+
     private String workTimeSummary(List<ScheduleRegistration> schedules) {
         return schedules.stream()
-                .map(item -> item.getShift().getStartTime().toString().substring(0, 5)
-                        + " - "
-                        + item.getShift().getEndTime().toString().substring(0, 5))
-                .reduce((first, second) -> first + " va " + second)
-                .map(value -> "Thoi gian lam viec tu " + value)
+                .map(item -> formatTime(item.getShift().getStartTime())
+                        + " đến "
+                        + formatTime(item.getShift().getEndTime()))
+                .reduce((first, second) -> first + " và " + second)
+                .map(value -> "từ " + value)
                 .orElse("");
+    }
+
+    private String formatTime(LocalTime time) {
+        if (time == null) {
+            return "";
+        }
+        return time.getMinute() == 0 ? time.getHour() + "h" : time.getHour() + "h" + String.format("%02d", time.getMinute());
     }
 
     private int estimatePageCount(String content) {
@@ -416,11 +524,16 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         int oldWords = StringUtils.hasText(oldContent) ? oldContent.trim().split("\\s+").length : 0;
         int newWords = StringUtils.hasText(newContent) ? newContent.trim().split("\\s+").length : 0;
         int delta = newWords - oldWords;
-        return "Thay doi " + (delta >= 0 ? "+" : "") + delta + " tu, tu " + oldPages + " len " + newPages + " trang uoc tinh";
+        return "Thay đổi " + (delta >= 0 ? "+" : "") + delta + " từ, từ " + oldPages + " lên " + newPages + " trang ước tính";
     }
 
     private String fileName(AppUser user, int completedShifts) {
-        return "Nhat ky thuc tap- duoc " + completedShifts + " ca -" + user.getFullName();
+        return "Nhật ký thực tập- được " + completedShifts + " ca -" + user.getFullName();
+    }
+
+    private String sanitizeFilePart(String value) {
+        String decoded = value == null ? "" : URLDecoder.decode(value, StandardCharsets.UTF_8);
+        return decoded.replaceAll("[^\\p{L}\\p{N}]+", "_").replaceAll("^_+|_+$", "");
     }
 
     private String nullToEmpty(String value) {
@@ -443,5 +556,11 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private record MailAttachment(String name, byte[] bytes, String contentType) {
+    }
+
+    private record RemoteFile(byte[] bytes, String contentType) {
     }
 }

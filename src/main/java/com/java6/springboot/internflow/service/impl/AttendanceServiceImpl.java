@@ -147,6 +147,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<AttendanceResponse> getUserAttendances(UUID userId, LocalDate date) {
         if (userId == null) {
             throw new BusinessException("User id la bat buoc");
@@ -192,6 +193,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<AttendanceImageResponse> getImages(UUID attendanceId) {
         if (attendanceId == null) {
             throw new BusinessException("Attendance id la bat buoc");
