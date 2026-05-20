@@ -31,10 +31,10 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedShifts() {
-        createShiftIfMissing("SHIFT_1", "Ca 1", LocalTime.of(8, 0), LocalTime.of(11, 30));
-        createShiftIfMissing("SHIFT_2", "Ca 2", LocalTime.of(13, 30), LocalTime.of(17, 0));
-        createShiftIfMissing("SHIFT_3", "Ca 3", LocalTime.of(17, 0), LocalTime.of(19, 40));
-        createShiftIfMissing("SHIFT_4", "Ca 4", LocalTime.of(19, 40), LocalTime.of(21, 40));
+        createOrUpdateShift("SHIFT_1", "Ca 1", LocalTime.of(8, 0), LocalTime.of(11, 30));
+        createOrUpdateShift("SHIFT_2", "Ca 2", LocalTime.of(13, 30), LocalTime.of(17, 0));
+        createOrUpdateShift("SHIFT_3", "Ca 3", LocalTime.of(17, 0), LocalTime.of(19, 40));
+        createOrUpdateShift("SHIFT_4", "Ca 4", LocalTime.of(19, 40), LocalTime.of(21, 40));
     }
 
     private void seedRolePolicies() {
@@ -44,9 +44,14 @@ public class DataInitializer implements CommandLineRunner {
         createOrUpdatePolicy(UserRole.ADMIN, 0, 0, 0, 0, 0, 0);
     }
 
-    private void createShiftIfMissing(String code, String name, LocalTime startTime, LocalTime endTime) {
+    private void createOrUpdateShift(String code, String name, LocalTime startTime, LocalTime endTime) {
         var existingShift = shiftRepository.findByCode(code);
         if (existingShift.isPresent()) {
+            Shift shift = existingShift.get();
+            shift.setName(name);
+            shift.setStartTime(startTime);
+            shift.setEndTime(endTime);
+            shiftRepository.save(shift);
             return;
         }
         shiftRepository.save(Shift.builder()
