@@ -85,12 +85,24 @@ VALUE: [client id của bạn]
 ```
 **Ví dụ:** `548332785385-5t4pcftrhba9f0fj7lsnqourqgt9ik6e.apps.googleusercontent.com`
 
+```
+NAME: GOOGLE_OAUTH_CLIENT_SECRET
+VALUE: [client secret của bạn]
+```
+**Ví dụ:** `GOCSPX-xxxxxxxxxxxxxxxxxxxxx`
+
 **Cách lấy:**
 1. Vào https://console.cloud.google.com
 2. Chọn project **internflow-496202**
 3. **APIs & Services** → **Credentials**
 4. Tìm **OAuth 2.0 Client IDs**
-5. Copy **Client ID**
+5. Click vào OAuth client name
+6. Copy **Client ID** và **Client secret**
+
+**⚠️ Lưu ý quan trọng:**
+- Client Secret cần thiết để backend sử dụng Gmail API
+- Không share Client Secret công khai
+- Nếu mất, có thể reset trong Google Cloud Console
 
 ---
 

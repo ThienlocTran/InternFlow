@@ -13,10 +13,12 @@ import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
+import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.ShiftRepository;
 import com.java6.springboot.internflow.service.ScheduleRegistrationService;
+import java.time.temporal.ChronoUnit;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -35,6 +37,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AppUserRepository appUserRepository;
+    private final AttendanceRepository attendanceRepository;
     private final ShiftRepository shiftRepository;
     private final RolePolicyRepository rolePolicyRepository;
 
@@ -62,16 +65,17 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (existingCount + shifts.size() > policy.getMaxShiftsPerDay()) {
             throw new BusinessException("Vuot so ca toi da trong ngay");
         }
-        LocalDate weekStart = request.scheduleDate().with(DayOfWeek.MONDAY);
-        LocalDate weekEnd = weekStart.plusDays(6);
-        long weeklyCount = scheduleRegistrationRepository.countByUserAndScheduleDateBetweenAndStatus(
+        LocalDate cumulativeQuotaStart = resolveQuotaStartDate(user, request.scheduleDate());
+        LocalDate weekEnd = request.scheduleDate().with(DayOfWeek.MONDAY).plusDays(6);
+        long cumulativeCount = scheduleRegistrationRepository.countByUserAndScheduleDateBetweenAndStatus(
                 user,
-                weekStart,
+                cumulativeQuotaStart,
                 weekEnd,
                 ScheduleRegistrationStatus.REGISTERED
         );
-        if (policy.getTargetShiftsPerWeek() > 0 && weeklyCount + shifts.size() > policy.getTargetShiftsPerWeek()) {
-            throw new BusinessException("Vuot chi tieu " + policy.getTargetShiftsPerWeek() + " ca trong tuan");
+        int cumulativeLimit = calculateCumulativeWeeklyLimit(policy, cumulativeQuotaStart, request.scheduleDate());
+        if (policy.getTargetShiftsPerWeek() > 0 && cumulativeCount + shifts.size() > cumulativeLimit) {
+            throw new BusinessException("Vuot quota tich luy den het tuan nay (" + cumulativeLimit + " ca)");
         }
         if (!isAdjacent(shifts)) {
             throw new BusinessException("Sinh vien nen chon cac ca lien ke nhau trong cung ngay");
@@ -133,6 +137,17 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         }
         ScheduleRegistration registration = scheduleRegistrationRepository.findById(registrationId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay lich dang ky"));
+        if (registration.getScheduleDate().isBefore(LocalDate.now())) {
+            throw new BusinessException("Ca da qua ngay nen khong the roi ca");
+        }
+        boolean attendanceStarted = attendanceRepository.findByUserAndShiftAndAttendanceDate(
+                registration.getUser(),
+                registration.getShift(),
+                registration.getScheduleDate()
+        ).isPresent();
+        if (attendanceStarted) {
+            throw new BusinessException("Ca nay da phat sinh diem danh nen khong the roi ca");
+        }
         registration.setStatus(ScheduleRegistrationStatus.CANCELLED);
         return ScheduleRegistrationResponse.from(scheduleRegistrationRepository.save(registration));
     }
@@ -236,6 +251,9 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (request.scheduleDate() == null) {
             throw new BusinessException("Ngay dang ky la bat buoc");
         }
+        if (request.scheduleDate().isBefore(LocalDate.now())) {
+            throw new BusinessException("Khong the dang ky ca trong ngay da qua");
+        }
         if (request.shiftIds() == null || request.shiftIds().isEmpty()) {
             throw new BusinessException("Can chon it nhat 1 ca");
         }
@@ -249,5 +267,21 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     private Shift findShift(UUID id) {
         return shiftRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+    }
+
+    private LocalDate resolveQuotaStartDate(AppUser user, LocalDate scheduleDate) {
+        if (user.getCohort() != null && user.getCohort().getStartDate() != null) {
+            LocalDate cohortStart = user.getCohort().getStartDate();
+            return cohortStart.isAfter(scheduleDate) ? scheduleDate : cohortStart;
+        }
+        return scheduleDate.with(DayOfWeek.MONDAY);
+    }
+
+    private int calculateCumulativeWeeklyLimit(RolePolicy policy, LocalDate quotaStartDate, LocalDate scheduleDate) {
+        if (policy.getTargetShiftsPerWeek() <= 0) {
+            return 0;
+        }
+        long weeksElapsed = ChronoUnit.WEEKS.between(quotaStartDate, scheduleDate) + 1;
+        return Math.toIntExact(weeksElapsed * policy.getTargetShiftsPerWeek());
     }
 }

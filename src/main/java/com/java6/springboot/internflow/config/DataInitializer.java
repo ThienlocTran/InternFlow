@@ -31,22 +31,27 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedShifts() {
-        createShiftIfMissing("SHIFT_1", "Ca 1", LocalTime.of(8, 0), LocalTime.of(11, 30));
-        createShiftIfMissing("SHIFT_2", "Ca 2", LocalTime.of(13, 30), LocalTime.of(17, 0));
-        createShiftIfMissing("SHIFT_3", "Ca 3", LocalTime.of(17, 0), LocalTime.of(19, 40));
-        createShiftIfMissing("SHIFT_4", "Ca 4", LocalTime.of(19, 40), LocalTime.of(21, 40));
+        createOrUpdateShift("SHIFT_1", "Ca 1", LocalTime.of(8, 0), LocalTime.of(11, 30));
+        createOrUpdateShift("SHIFT_2", "Ca 2", LocalTime.of(13, 30), LocalTime.of(17, 0));
+        createOrUpdateShift("SHIFT_3", "Ca 3", LocalTime.of(17, 0), LocalTime.of(19, 40));
+        createOrUpdateShift("SHIFT_4", "Ca 4", LocalTime.of(19, 40), LocalTime.of(21, 40));
     }
 
     private void seedRolePolicies() {
-        createOrUpdatePolicy(UserRole.INTERN, 2, 6, 60, 10, 6, 1);
-        createOrUpdatePolicy(UserRole.TEAM_LEADER, 3, 9, 60, 10, 6, 1);
-        createOrUpdatePolicy(UserRole.MANAGER, 0, 0, 0, 0, 0, 0);
-        createOrUpdatePolicy(UserRole.ADMIN, 0, 0, 0, 0, 0, 0);
+        createOrUpdatePolicy(UserRole.INTERN, 2, 6, 60, 10, 6, 1, 0, 0);
+        createOrUpdatePolicy(UserRole.TEAM_LEADER, 3, 9, 60, 10, 6, 1, 6, 1);
+        createOrUpdatePolicy(UserRole.MANAGER, 0, 0, 0, 0, 0, 0, 0, 0);
+        createOrUpdatePolicy(UserRole.ADMIN, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
-    private void createShiftIfMissing(String code, String name, LocalTime startTime, LocalTime endTime) {
+    private void createOrUpdateShift(String code, String name, LocalTime startTime, LocalTime endTime) {
         var existingShift = shiftRepository.findByCode(code);
         if (existingShift.isPresent()) {
+            Shift shift = existingShift.get();
+            shift.setName(name);
+            shift.setStartTime(startTime);
+            shift.setEndTime(endTime);
+            shiftRepository.save(shift);
             return;
         }
         shiftRepository.save(Shift.builder()
@@ -66,7 +71,9 @@ public class DataInitializer implements CommandLineRunner {
             int requiredCompanyShifts,
             int requiredHomeShifts,
             int nightShiftBonusThreshold,
-            int nightShiftBonusAmount
+            int nightShiftBonusAmount,
+            int leadershipBonusThreshold,
+            int leadershipBonusAmount
     ) {
         var existingPolicy = rolePolicyRepository.findByRole(role);
         if (existingPolicy.isPresent()) {
@@ -77,6 +84,8 @@ public class DataInitializer implements CommandLineRunner {
             policy.setRequiredHomeShifts(requiredHomeShifts);
             policy.setNightShiftBonusThreshold(nightShiftBonusThreshold);
             policy.setNightShiftBonusAmount(nightShiftBonusAmount);
+            policy.setLeadershipBonusThreshold(leadershipBonusThreshold);
+            policy.setLeadershipBonusAmount(leadershipBonusAmount);
             rolePolicyRepository.save(policy);
             return;
         }
@@ -88,6 +97,8 @@ public class DataInitializer implements CommandLineRunner {
                 .requiredHomeShifts(requiredHomeShifts)
                 .nightShiftBonusThreshold(nightShiftBonusThreshold)
                 .nightShiftBonusAmount(nightShiftBonusAmount)
+                .leadershipBonusThreshold(leadershipBonusThreshold)
+                .leadershipBonusAmount(leadershipBonusAmount)
                 .build());
     }
 

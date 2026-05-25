@@ -12,7 +12,9 @@ public record RolePolicyResponse(
         int requiredCompanyShifts,
         int requiredHomeShifts,
         int nightShiftBonusThreshold,
-        int nightShiftBonusAmount
+        int nightShiftBonusAmount,
+        int leadershipBonusThreshold,
+        int leadershipBonusAmount
 ) {
 
     public static RolePolicyResponse from(RolePolicy policy) {
@@ -24,7 +26,9 @@ public record RolePolicyResponse(
                 policy.getRequiredCompanyShifts(),
                 policy.getRequiredHomeShifts(),
                 policy.getNightShiftBonusThreshold(),
-                policy.getNightShiftBonusAmount()
+                policy.getNightShiftBonusAmount(),
+                policy.getLeadershipBonusThreshold(),
+                policy.getLeadershipBonusAmount()
         );
     }
 }

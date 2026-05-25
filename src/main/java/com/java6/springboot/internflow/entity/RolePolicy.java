@@ -50,4 +50,10 @@ public class RolePolicy {
 
     @Column(name = "night_shift_bonus_amount", nullable = false, columnDefinition = "integer default 0")
     private int nightShiftBonusAmount = 0;
+
+    @Column(name = "leadership_bonus_threshold", nullable = false, columnDefinition = "integer default 0")
+    private int leadershipBonusThreshold = 0;
+
+    @Column(name = "leadership_bonus_amount", nullable = false, columnDefinition = "integer default 0")
+    private int leadershipBonusAmount = 0;
 }
