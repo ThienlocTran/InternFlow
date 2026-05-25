@@ -228,8 +228,13 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         int completedShiftCount = document.getCompletedShiftCount();
         String subject = user.getFullName() + ", được " + completedShiftCount
                 + " ca, ngày " + request.workDate().format(SUBJECT_DATE_FORMAT);
-        String attachmentName = fileName(user, document.getCompletedShiftCount()) + ".docx";
-        byte[] docxBytes = buildJournalDocx(document);
+        UploadedDocument uploadedDocument = decodeUploadedDocument(request);
+        String attachmentName = uploadedDocument != null
+                ? uploadedDocument.name()
+                : fileName(user, document.getCompletedShiftCount()) + ".docx";
+        byte[] docxBytes = uploadedDocument != null
+                ? uploadedDocument.bytes()
+                : buildJournalDocx(document);
         List<MailAttachment> attachments = new ArrayList<>();
         attachments.add(new MailAttachment(
                 attachmentName,
@@ -426,6 +431,23 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         return attachments;
     }
 
+    private UploadedDocument decodeUploadedDocument(SubmitDailyReportMailRequest request) {
+        if (!StringUtils.hasText(request.uploadedDocumentName()) || !StringUtils.hasText(request.uploadedDocumentBase64())) {
+            return null;
+        }
+        try {
+            byte[] bytes = Base64.getDecoder().decode(request.uploadedDocumentBase64().trim());
+            if (bytes.length == 0) {
+                return null;
+            }
+            String normalizedName = request.uploadedDocumentName().trim();
+            String finalName = normalizedName.toLowerCase().endsWith(".docx") ? normalizedName : normalizedName + ".docx";
+            return new UploadedDocument(finalName, bytes);
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException("File Word tai len khong hop le");
+        }
+    }
+
     private Map<String, String> attendanceImagesForMail(Attendance attendance) {
         Map<String, String> images = new LinkedHashMap<>();
         String shiftName = sanitizeFilePart(attendance.getShift().getName());
@@ -598,5 +620,8 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     private record RemoteFile(byte[] bytes, String contentType) {
+    }
+
+    private record UploadedDocument(String name, byte[] bytes) {
     }
 }
