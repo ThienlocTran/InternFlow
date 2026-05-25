@@ -13,6 +13,7 @@ import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
+import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.ShiftRepository;
@@ -35,6 +36,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AppUserRepository appUserRepository;
+    private final AttendanceRepository attendanceRepository;
     private final ShiftRepository shiftRepository;
     private final RolePolicyRepository rolePolicyRepository;
 
@@ -133,6 +135,17 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         }
         ScheduleRegistration registration = scheduleRegistrationRepository.findById(registrationId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay lich dang ky"));
+        if (registration.getScheduleDate().isBefore(LocalDate.now())) {
+            throw new BusinessException("Ca da qua ngay nen khong the roi ca");
+        }
+        boolean attendanceStarted = attendanceRepository.findByUserAndShiftAndAttendanceDate(
+                registration.getUser(),
+                registration.getShift(),
+                registration.getScheduleDate()
+        ).isPresent();
+        if (attendanceStarted) {
+            throw new BusinessException("Ca nay da phat sinh diem danh nen khong the roi ca");
+        }
         registration.setStatus(ScheduleRegistrationStatus.CANCELLED);
         return ScheduleRegistrationResponse.from(scheduleRegistrationRepository.save(registration));
     }
@@ -235,6 +248,9 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         }
         if (request.scheduleDate() == null) {
             throw new BusinessException("Ngay dang ky la bat buoc");
+        }
+        if (request.scheduleDate().isBefore(LocalDate.now())) {
+            throw new BusinessException("Khong the dang ky ca trong ngay da qua");
         }
         if (request.shiftIds() == null || request.shiftIds().isEmpty()) {
             throw new BusinessException("Can chon it nhat 1 ca");

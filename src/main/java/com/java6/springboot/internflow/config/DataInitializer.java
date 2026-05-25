@@ -38,10 +38,10 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedRolePolicies() {
-        createOrUpdatePolicy(UserRole.INTERN, 2, 6, 60, 10, 6, 1);
-        createOrUpdatePolicy(UserRole.TEAM_LEADER, 3, 9, 60, 10, 6, 1);
-        createOrUpdatePolicy(UserRole.MANAGER, 0, 0, 0, 0, 0, 0);
-        createOrUpdatePolicy(UserRole.ADMIN, 0, 0, 0, 0, 0, 0);
+        createOrUpdatePolicy(UserRole.INTERN, 2, 6, 60, 10, 6, 1, 0, 0);
+        createOrUpdatePolicy(UserRole.TEAM_LEADER, 3, 9, 60, 10, 6, 1, 6, 1);
+        createOrUpdatePolicy(UserRole.MANAGER, 0, 0, 0, 0, 0, 0, 0, 0);
+        createOrUpdatePolicy(UserRole.ADMIN, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private void createOrUpdateShift(String code, String name, LocalTime startTime, LocalTime endTime) {
@@ -71,7 +71,9 @@ public class DataInitializer implements CommandLineRunner {
             int requiredCompanyShifts,
             int requiredHomeShifts,
             int nightShiftBonusThreshold,
-            int nightShiftBonusAmount
+            int nightShiftBonusAmount,
+            int leadershipBonusThreshold,
+            int leadershipBonusAmount
     ) {
         var existingPolicy = rolePolicyRepository.findByRole(role);
         if (existingPolicy.isPresent()) {
@@ -82,6 +84,8 @@ public class DataInitializer implements CommandLineRunner {
             policy.setRequiredHomeShifts(requiredHomeShifts);
             policy.setNightShiftBonusThreshold(nightShiftBonusThreshold);
             policy.setNightShiftBonusAmount(nightShiftBonusAmount);
+            policy.setLeadershipBonusThreshold(leadershipBonusThreshold);
+            policy.setLeadershipBonusAmount(leadershipBonusAmount);
             rolePolicyRepository.save(policy);
             return;
         }
@@ -93,6 +97,8 @@ public class DataInitializer implements CommandLineRunner {
                 .requiredHomeShifts(requiredHomeShifts)
                 .nightShiftBonusThreshold(nightShiftBonusThreshold)
                 .nightShiftBonusAmount(nightShiftBonusAmount)
+                .leadershipBonusThreshold(leadershipBonusThreshold)
+                .leadershipBonusAmount(leadershipBonusAmount)
                 .build());
     }
 

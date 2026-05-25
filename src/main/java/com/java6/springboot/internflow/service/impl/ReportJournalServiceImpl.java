@@ -3,6 +3,7 @@ package com.java6.springboot.internflow.service.impl;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
+import com.java6.springboot.internflow.dto.response.EmailLogResponse;
 import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
 import com.java6.springboot.internflow.dto.response.ReportDocumentResponse;
 import com.java6.springboot.internflow.dto.response.ReportEntryResponse;
@@ -11,10 +12,12 @@ import com.java6.springboot.internflow.dto.response.ReportRevisionResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.AttendanceImage;
+import com.java6.springboot.internflow.entity.EmailLog;
 import com.java6.springboot.internflow.entity.ReportDocument;
 import com.java6.springboot.internflow.entity.ReportEntry;
 import com.java6.springboot.internflow.entity.ReportRevision;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
+import com.java6.springboot.internflow.enums.EmailStatus;
 import com.java6.springboot.internflow.enums.ReportEntryStatus;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import com.java6.springboot.internflow.enums.UserRole;
@@ -23,6 +26,7 @@ import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
+import com.java6.springboot.internflow.repository.EmailLogRepository;
 import com.java6.springboot.internflow.repository.ReportDocumentRepository;
 import com.java6.springboot.internflow.repository.ReportEntryRepository;
 import com.java6.springboot.internflow.repository.ReportRevisionRepository;
@@ -68,7 +72,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     private static final int DAY_SHIFT_REQUIRED_PAGES = 8;
     private static final int NIGHT_SHIFT_REQUIRED_PAGES = 5;
-    private static final int WORDS_PER_PAGE_ESTIMATE = 450;
+    private static final int WORDS_PER_PAGE_ESTIMATE = 210;
     private static final int MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
     private static final int MAX_MAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
     private static final DateTimeFormatter SUBJECT_DATE_FORMAT = DateTimeFormatter.ofPattern("d.M.yy");
@@ -80,6 +84,8 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private final ReportDocumentRepository reportDocumentRepository;
     private final ReportEntryRepository reportEntryRepository;
     private final ReportRevisionRepository reportRevisionRepository;
+    private final EmailLogRepository emailLogRepository;
+    private final InternshipProgressCalculator internshipProgressCalculator;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -177,6 +183,16 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<EmailLogResponse> getEmailLogs(UUID userId) {
+        AppUser user = findUser(userId);
+        return emailLogRepository.findByUserOrderBySentAtDesc(user)
+                .stream()
+                .map(EmailLogResponse::from)
+                .toList();
+    }
+
+    @Override
     @Transactional
     public MailSubmitResponse submitDailyMail(SubmitDailyReportMailRequest request) {
         if (request == null || request.userId() == null || request.workDate() == null) {
@@ -220,9 +236,32 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 docxBytes,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ));
-        attachments.addAll(buildAttendanceImageAttachments(attendances));
+        List<MailAttachment> imageAttachments = buildAttendanceImageAttachments(attendances);
+        attachments.addAll(imageAttachments);
 
-        sendMailWithGmailApi(user, request.googleAccessToken(), subject, buildMailBody(user, dailyEntry, schedules, attendances), attachments);
+        // Create email log before sending
+        EmailLog emailLog = EmailLog.builder()
+                .user(user)
+                .subject(subject)
+                .receivers(reportMailTo)
+                .ccReceivers(reportMailCc)
+                .workDate(request.workDate())
+                .sentAt(java.time.Instant.now())
+                .attachmentCount(1 + imageAttachments.size())
+                .status(EmailStatus.PENDING)
+                .build();
+
+        try {
+            sendMailWithGmailApi(user, request.googleAccessToken(), subject, buildMailBody(user, dailyEntry, schedules, attendances), attachments);
+            emailLog.setStatus(EmailStatus.SENT);
+        } catch (Exception exception) {
+            emailLog.setStatus(EmailStatus.FAILED);
+            emailLog.setErrorMessage(exception.getMessage());
+            emailLogRepository.save(emailLog);
+            throw exception;
+        }
+
+        emailLogRepository.save(emailLog);
         return new MailSubmitResponse(reportMailTo, reportMailCc, subject, attachmentName);
     }
 
@@ -241,10 +280,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private void refreshDocument(ReportDocument document) {
         List<ReportEntry> entries = reportEntryRepository.findByDocumentOrderByWorkDateDesc(document);
         int totalPages = entries.stream().mapToInt(ReportEntry::getPageCount).sum();
-        int completedShifts = Math.toIntExact(attendanceRepository.countByUserAndStatus(
-                document.getUser(),
-                com.java6.springboot.internflow.enums.AttendanceStatus.CHECKED_OUT
-        ));
+        int completedShifts = internshipProgressCalculator.calculateEffectiveCompletedCompanyShifts(document.getUser());
         document.setTotalPages(totalPages);
         document.setCompletedShiftCount(completedShifts);
         document.setCurrentFileName(fileName(document.getUser(), completedShifts));

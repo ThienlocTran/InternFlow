@@ -13,15 +13,12 @@ import com.java6.springboot.internflow.entity.ReportDocument;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.enums.AttendanceImageType;
 import com.java6.springboot.internflow.enums.AttendanceImagePhase;
-import com.java6.springboot.internflow.enums.AttendanceStatus;
-import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.ReportDocumentRepository;
 import com.java6.springboot.internflow.repository.ReportEntryRepository;
-import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.service.AdminStudentDetailService;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -49,18 +46,17 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
     private final AttendanceImageRepository attendanceImageRepository;
     private final ReportDocumentRepository reportDocumentRepository;
     private final ReportEntryRepository reportEntryRepository;
-    private final RolePolicyRepository rolePolicyRepository;
+    private final InternshipProgressCalculator internshipProgressCalculator;
 
     @Override
     @Transactional(readOnly = true)
     public AdminStudentDetailResponse getStudentDetail(UUID studentId) {
         AppUser student = appUserRepository.findById(studentId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay sinh vien"));
-        RolePolicy policy = rolePolicyRepository.findByRole(student.getRole())
-                .orElseGet(() -> rolePolicyRepository.findByRole(UserRole.INTERN).orElse(null));
-        int requiredCompanyShifts = policy == null ? 60 : policy.getRequiredCompanyShifts();
-        int requiredHomeShifts = policy == null ? 10 : policy.getRequiredHomeShifts();
-        long completed = attendanceRepository.countByUserAndStatus(student, AttendanceStatus.CHECKED_OUT);
+        RolePolicy policy = internshipProgressCalculator.resolvePolicy(student);
+        int requiredCompanyShifts = policy == null ? 0 : policy.getRequiredCompanyShifts();
+        int requiredHomeShifts = policy == null ? 0 : policy.getRequiredHomeShifts();
+        long completed = internshipProgressCalculator.calculateEffectiveCompletedCompanyShifts(student);
         long remaining = Math.max(0, requiredCompanyShifts - completed);
 
         List<Attendance> attendances = attendanceRepository.findByUserOrderByAttendanceDateDescShift_StartTimeAsc(student);

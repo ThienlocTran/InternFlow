@@ -4,6 +4,7 @@ import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
+import com.java6.springboot.internflow.dto.response.EmailLogResponse;
 import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
 import com.java6.springboot.internflow.dto.response.ReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.ReportProgressResponse;
@@ -52,5 +53,10 @@ public class ReportJournalController {
     @PostMapping("/submit-mail")
     public ApiResponse<MailSubmitResponse> submitDailyMail(@RequestBody SubmitDailyReportMailRequest request) {
         return ApiResponse.ok("Gui mail cuoi ngay thanh cong", reportJournalService.submitDailyMail(request));
+    }
+
+    @GetMapping("/email-logs")
+    public ApiResponse<List<EmailLogResponse>> getEmailLogs(@RequestParam UUID userId) {
+        return ApiResponse.ok("Lay lich su gui mail thanh cong", reportJournalService.getEmailLogs(userId));
     }
 }
