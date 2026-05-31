@@ -81,7 +81,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
             throw new BusinessException("Vuot quota tich luy den het tuan nay (" + cumulativeLimit + " ca)");
         }
         if (!isAdjacent(shifts)) {
-            throw new BusinessException("Sinh vien nen chon cac ca lien ke nhau trong cung ngay");
+            throw new BusinessException("Cac ca trong ngay phai lien ke theo thu tu ca");
         }
 
         return shifts.stream()
@@ -237,19 +237,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     private int shiftOrder(Shift shift) {
-        if (shift.getShiftOrder() > 0) {
-            return shift.getShiftOrder();
-        }
-        String code = shift.getCode() == null ? "" : shift.getCode();
-        int underscore = code.lastIndexOf('_');
-        if (underscore >= 0 && underscore + 1 < code.length()) {
-            try {
-                return Integer.parseInt(code.substring(underscore + 1));
-            } catch (NumberFormatException ignored) {
-                return 999;
-            }
-        }
-        return 999;
+        return shift.getShiftOrder();
     }
 
     private void validateRequest(ScheduleRegistrationRequest request) {
