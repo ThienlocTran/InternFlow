@@ -9,6 +9,13 @@ public record AttendanceImageRequest(
         AttendanceImagePhase phase,
         LocalTime expectedTime,
         String imageUrl,
+        String storageProvider,
+        String publicId,
+        String thumbnailUrl,
+        Long fileSizeBytes,
+        String mimeType,
+        Integer width,
+        Integer height,
         String sourceReference,
         Integer displayOrder,
         String note

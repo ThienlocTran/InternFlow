@@ -25,6 +25,8 @@ import com.java6.springboot.internflow.service.AttendanceService;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,9 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class AttendanceServiceImpl implements AttendanceService {
+
+    private static final String CLOUDINARY_PROVIDER = "CLOUDINARY";
+    private static final String THUMBNAIL_TRANSFORMATION = "c_limit,w_400,q_auto,f_auto";
 
     private final AttendanceRepository attendanceRepository;
     private final AppUserRepository appUserRepository;
@@ -189,6 +194,13 @@ public class AttendanceServiceImpl implements AttendanceService {
                         .expectedTime(request.expectedTime())
                         .build());
         image.setImageUrl(request.imageUrl().trim());
+        image.setStorageProvider(storageProvider(request));
+        image.setPublicId(publicId(request));
+        image.setThumbnailUrl(thumbnailUrl(request));
+        image.setFileSizeBytes(request.fileSizeBytes());
+        image.setMimeType(trimToNull(request.mimeType()));
+        image.setWidth(request.width());
+        image.setHeight(request.height());
         image.setSourceReference(trimToNull(request.sourceReference()));
         image.setDisplayOrder(request.displayOrder() == null ? 0 : request.displayOrder());
         image.setNote(trimToNull(request.note()));
@@ -253,6 +265,68 @@ public class AttendanceServiceImpl implements AttendanceService {
      */
     private String optionalImageValue(String value) {
         return StringUtils.hasText(value) ? value.trim() : "";
+    }
+
+    private String storageProvider(AttendanceImageRequest request) {
+        if (StringUtils.hasText(request.storageProvider())) {
+            return request.storageProvider().trim();
+        }
+        return request.imageUrl().contains("cloudinary.com") ? CLOUDINARY_PROVIDER : null;
+    }
+
+    private String publicId(AttendanceImageRequest request) {
+        if (StringUtils.hasText(request.publicId())) {
+            return request.publicId().trim();
+        }
+        return parseCloudinaryPublicId(request.imageUrl());
+    }
+
+    private String thumbnailUrl(AttendanceImageRequest request) {
+        if (StringUtils.hasText(request.thumbnailUrl())) {
+            return request.thumbnailUrl().trim();
+        }
+        String imageUrl = request.imageUrl().trim();
+        if (imageUrl.contains("/image/upload/")) {
+            return imageUrl.replace("/image/upload/", "/image/upload/" + THUMBNAIL_TRANSFORMATION + "/");
+        }
+        return imageUrl;
+    }
+
+    private String parseCloudinaryPublicId(String imageUrl) {
+        if (!StringUtils.hasText(imageUrl) || !imageUrl.contains("/image/upload/")) {
+            return null;
+        }
+        try {
+            String path = imageUrl.substring(imageUrl.indexOf("/image/upload/") + "/image/upload/".length());
+            String[] parts = path.split("/");
+            int startIndex = 0;
+            for (int index = 0; index < parts.length; index++) {
+                if (parts[index].matches("v\\d+")) {
+                    startIndex = index + 1;
+                    break;
+                }
+                if (parts[index].contains(",")) {
+                    startIndex = index + 1;
+                }
+            }
+            if (startIndex >= parts.length) {
+                return null;
+            }
+            String publicPath = String.join("/", java.util.Arrays.copyOfRange(parts, startIndex, parts.length));
+            int queryIndex = publicPath.indexOf('?');
+            if (queryIndex >= 0) {
+                publicPath = publicPath.substring(0, queryIndex);
+            }
+            int extensionIndex = publicPath.lastIndexOf('.');
+            if (extensionIndex > 0) {
+                publicPath = publicPath.substring(0, extensionIndex);
+            }
+            return StringUtils.hasText(publicPath)
+                    ? URLDecoder.decode(publicPath, StandardCharsets.UTF_8)
+                    : null;
+        } catch (Exception exception) {
+            return null;
+        }
     }
 
     private void validateImageRequest(UUID attendanceId, AttendanceImageRequest request) {

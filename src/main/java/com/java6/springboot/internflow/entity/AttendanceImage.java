@@ -63,6 +63,28 @@ public class AttendanceImage {
     @Column(name = "image_url", nullable = false, length = 500)
     private String imageUrl;
 
+    @Builder.Default
+    @Column(name = "storage_provider", length = 50)
+    private String storageProvider = "CLOUDINARY";
+
+    @Column(name = "public_id", length = 500)
+    private String publicId;
+
+    @Column(name = "thumbnail_url", length = 500)
+    private String thumbnailUrl;
+
+    @Column(name = "file_size_bytes")
+    private Long fileSizeBytes;
+
+    @Column(name = "mime_type", length = 100)
+    private String mimeType;
+
+    @Column(name = "image_width")
+    private Integer width;
+
+    @Column(name = "image_height")
+    private Integer height;
+
     @Column(name = "source_reference", length = 500)
     private String sourceReference;
 
@@ -75,4 +97,14 @@ public class AttendanceImage {
     @CreationTimestamp
     @Column(name = "uploaded_at", nullable = false, updatable = false)
     private Instant uploadedAt;
+
+    @Column(name = "retention_until")
+    private Instant retentionUntil;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Builder.Default
+    @Column(name = "delete_status", length = 30)
+    private String deleteStatus = "ACTIVE";
 }

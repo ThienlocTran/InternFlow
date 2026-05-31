@@ -29,6 +29,7 @@ public class CloudinaryImageUploadServiceImpl implements ImageUploadService {
 
     private static final String FOLDER = "internflow/attendance";
     private static final String INCOMING_TRANSFORMATION = "c_limit,w_1600,h_1600,q_auto";
+    private static final String THUMBNAIL_TRANSFORMATION = "c_limit,w_400,q_auto,f_auto";
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -70,10 +71,16 @@ public class CloudinaryImageUploadServiceImpl implements ImageUploadService {
             }
 
             JsonNode json = objectMapper.readTree(response.body());
+            String secureUrl = json.path("secure_url").asText();
             return new ImageUploadResponse(
-                    json.path("secure_url").asText(),
+                    secureUrl,
                     json.path("public_id").asText(),
-                    file.getOriginalFilename()
+                    file.getOriginalFilename(),
+                    cloudinaryTransformUrl(secureUrl, THUMBNAIL_TRANSFORMATION),
+                    json.path("bytes").isNumber() ? json.path("bytes").asLong() : file.getSize(),
+                    mimeType(json, file.getContentType()),
+                    json.path("width").isNumber() ? json.path("width").asInt() : null,
+                    json.path("height").isNumber() ? json.path("height").asInt() : null
             );
         } catch (IOException exception) {
             throw new BusinessException("Khong the doc file anh upload");
@@ -134,5 +141,20 @@ public class CloudinaryImageUploadServiceImpl implements ImageUploadService {
         } catch (NoSuchAlgorithmException exception) {
             throw new BusinessException("Khong the tao chu ky Cloudinary");
         }
+    }
+
+    private String cloudinaryTransformUrl(String secureUrl, String transformation) {
+        if (!StringUtils.hasText(secureUrl) || !secureUrl.contains("/image/upload/")) {
+            return secureUrl;
+        }
+        return secureUrl.replace("/image/upload/", "/image/upload/" + transformation + "/");
+    }
+
+    private String mimeType(JsonNode json, String fallback) {
+        String format = json.path("format").asText("");
+        if (StringUtils.hasText(format)) {
+            return "image/" + format.trim().toLowerCase();
+        }
+        return StringUtils.hasText(fallback) ? fallback : null;
     }
 }
