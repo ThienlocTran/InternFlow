@@ -8,21 +8,22 @@ import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
 import com.java6.springboot.internflow.dto.response.ReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.ReportProgressResponse;
 import com.java6.springboot.internflow.dto.response.ReportRevisionResponse;
+import com.java6.springboot.internflow.entity.AppUser;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 public interface ReportJournalService {
 
-    ReportProgressResponse getProgress(UUID userId);
+    ReportProgressResponse getProgress(AppUser user);
 
     List<DailyReportEntryResponse> getEntriesByDate(LocalDate workDate);
 
-    ReportEntryResponse saveEntry(ReportEntryRequest request);
+    ReportEntryResponse saveEntry(AppUser currentUser, ReportEntryRequest request);
 
-    List<ReportRevisionResponse> getRevisions(UUID entryId);
+    List<ReportRevisionResponse> getRevisions(AppUser currentUser, UUID entryId);
 
-    MailSubmitResponse submitDailyMail(SubmitDailyReportMailRequest request);
+    MailSubmitResponse submitDailyMail(AppUser currentUser, SubmitDailyReportMailRequest request);
 
-    List<EmailLogResponse> getEmailLogs(UUID userId);
+    List<EmailLogResponse> getEmailLogs(AppUser user);
 }

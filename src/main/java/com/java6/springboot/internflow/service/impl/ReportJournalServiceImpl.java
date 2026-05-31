@@ -22,6 +22,7 @@ import com.java6.springboot.internflow.enums.ReportEntryStatus;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
+import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
@@ -98,8 +99,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional
-    public ReportProgressResponse getProgress(UUID userId) {
-        AppUser user = findUser(userId);
+    public ReportProgressResponse getProgress(AppUser user) {
         ReportDocument document = getOrCreateDocument(user);
         return new ReportProgressResponse(
                 ReportDocumentResponse.from(document),
@@ -126,9 +126,8 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional
-    public ReportEntryResponse saveEntry(ReportEntryRequest request) {
+    public ReportEntryResponse saveEntry(AppUser user, ReportEntryRequest request) {
         validateRequest(request);
-        AppUser user = findUser(request.userId());
         ReportDocument document = getOrCreateDocument(user);
         List<ScheduleRegistration> daySchedules = scheduleRegistrationRepository
                 .findByUserAndScheduleDateAndStatus(user, request.workDate(), ScheduleRegistrationStatus.REGISTERED)
@@ -174,9 +173,10 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ReportRevisionResponse> getRevisions(UUID entryId) {
+    public List<ReportRevisionResponse> getRevisions(AppUser currentUser, UUID entryId) {
         ReportEntry entry = reportEntryRepository.findById(entryId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay nhat ky"));
+        assertCanReadEntry(currentUser, entry);
         return reportRevisionRepository.findByEntryOrderByCreatedAtDesc(entry)
                 .stream()
                 .map(ReportRevisionResponse::from)
@@ -185,8 +185,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<EmailLogResponse> getEmailLogs(UUID userId) {
-        AppUser user = findUser(userId);
+    public List<EmailLogResponse> getEmailLogs(AppUser user) {
         return emailLogRepository.findByUserOrderBySentAtDesc(user)
                 .stream()
                 .map(EmailLogResponse::from)
@@ -195,15 +194,14 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional
-    public MailSubmitResponse submitDailyMail(SubmitDailyReportMailRequest request) {
-        if (request == null || request.userId() == null || request.workDate() == null) {
-            throw new BusinessException("User id va ngay gui mail la bat buoc");
+    public MailSubmitResponse submitDailyMail(AppUser user, SubmitDailyReportMailRequest request) {
+        if (request == null || request.workDate() == null) {
+            throw new BusinessException("Ngay gui mail la bat buoc");
         }
         if (!StringUtils.hasText(request.googleAccessToken())) {
             throw new BusinessException("Can cap quyen Gmail de gui mail bang chinh tai khoan cua sinh vien");
         }
 
-        AppUser user = findUser(request.userId());
         List<String> missingProfileFields = ProfileCompleteness.missingRequiredFields(user);
         if (!missingProfileFields.isEmpty()) {
             throw new BusinessException("Ho so sinh vien chua du thong tin bat buoc: " + String.join(", ", missingProfileFields));
@@ -609,11 +607,19 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     private void validateRequest(ReportEntryRequest request) {
-        if (request == null || request.userId() == null) {
-            throw new BusinessException("User id la bat buoc");
+        if (request == null) {
+            throw new BusinessException("Du lieu nhat ky la bat buoc");
         }
         if (request.workDate() == null || request.workDate().isAfter(LocalDate.now().plusDays(1))) {
             throw new BusinessException("Ngay viet nhat ky khong hop le");
+        }
+    }
+
+    private void assertCanReadEntry(AppUser currentUser, ReportEntry entry) {
+        boolean owner = entry.getDocument().getUser().getId().equals(currentUser.getId());
+        boolean privileged = currentUser.getRole() == UserRole.ADMIN || currentUser.getRole() == UserRole.MANAGER;
+        if (!owner && !privileged) {
+            throw new ForbiddenException("Ban khong co quyen xem lich su nhat ky cua user khac");
         }
     }
 

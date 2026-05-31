@@ -11,6 +11,7 @@ import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
+import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
@@ -43,9 +44,8 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     @Override
     @Transactional
-    public List<ScheduleRegistrationResponse> register(ScheduleRegistrationRequest request) {
+    public List<ScheduleRegistrationResponse> register(AppUser user, ScheduleRegistrationRequest request) {
         validateRequest(request);
-        AppUser user = findUser(request.userId());
         RolePolicy policy = rolePolicyRepository.findByRole(user.getRole())
                 .orElseThrow(() -> new BusinessException("Chua cau hinh quota cho role " + user.getRole()));
         if (policy.getMaxShiftsPerDay() <= 0) {
@@ -89,8 +89,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     @Override
     @Transactional(readOnly = true)
-    public List<ScheduleRegistrationResponse> getUserSchedule(UUID userId, LocalDate startDate, LocalDate endDate) {
-        AppUser user = findUser(userId);
+    public List<ScheduleRegistrationResponse> getUserSchedule(AppUser user, LocalDate startDate, LocalDate endDate) {
         LocalDate start = startDate == null ? LocalDate.now().with(java.time.DayOfWeek.MONDAY) : startDate;
         LocalDate end = endDate == null ? start.plusDays(6) : endDate;
         return scheduleRegistrationRepository.findByUserAndScheduleDateBetweenOrderByScheduleDateAscShift_StartTimeAsc(user, start, end)
@@ -131,12 +130,15 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     @Override
     @Transactional
-    public ScheduleRegistrationResponse cancel(UUID registrationId) {
+    public ScheduleRegistrationResponse cancel(AppUser currentUser, UUID registrationId) {
         if (registrationId == null) {
             throw new BusinessException("Registration id la bat buoc");
         }
         ScheduleRegistration registration = scheduleRegistrationRepository.findById(registrationId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay lich dang ky"));
+        if (!registration.getUser().getId().equals(currentUser.getId())) {
+            throw new ForbiddenException("Ban khong co quyen roi ca cua user khac");
+        }
         if (registration.getScheduleDate().isBefore(LocalDate.now())) {
             throw new BusinessException("Ca da qua ngay nen khong the roi ca");
         }
@@ -245,8 +247,8 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     private void validateRequest(ScheduleRegistrationRequest request) {
-        if (request == null || request.userId() == null) {
-            throw new BusinessException("User id la bat buoc");
+        if (request == null) {
+            throw new BusinessException("Du lieu dang ky ca la bat buoc");
         }
         if (request.scheduleDate() == null) {
             throw new BusinessException("Ngay dang ky la bat buoc");

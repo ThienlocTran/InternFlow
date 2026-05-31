@@ -245,7 +245,7 @@ public class TeamServiceImpl implements TeamService {
                 .findByUserAndScheduleDateAndStatus(member, targetDate, ScheduleRegistrationStatus.REGISTERED);
 
         // Reuse existing AttendanceService to get full attendance with images
-        List<AttendanceResponse> attendances = attendanceService.getUserAttendances(memberId, targetDate);
+        List<AttendanceResponse> attendances = attendanceService.getUserAttendances(member, targetDate);
 
         // Reuse existing ReportJournalService to get report entries
         List<DailyReportEntryResponse> reportEntries = reportJournalService.getEntriesByDate(targetDate)
