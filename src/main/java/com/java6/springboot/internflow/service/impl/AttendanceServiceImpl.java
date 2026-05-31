@@ -11,6 +11,7 @@ import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
+import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
@@ -46,6 +47,9 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Transactional
     public AttendanceResponse checkin(AppUser user, CheckinRequest request) {
         validateCheckinRequest(request);
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc diem danh");
+        }
         Shift shift = findShift(request.shiftId());
         LocalDate attendanceDate = request.attendanceDate() == null ? LocalDate.now() : request.attendanceDate();
 

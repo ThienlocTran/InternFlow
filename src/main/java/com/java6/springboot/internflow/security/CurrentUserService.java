@@ -8,6 +8,7 @@ import com.java6.springboot.internflow.exception.UnauthorizedException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -57,6 +58,25 @@ public class CurrentUserService {
 
     public boolean isPrivileged(AppUser user) {
         return user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.MANAGER;
+    }
+
+    public void requireAdminOrManager(AppUser user) {
+        requireAnyRole(user, UserRole.ADMIN, UserRole.MANAGER);
+    }
+
+    public void requireTeamLeader(AppUser user) {
+        requireAnyRole(user, UserRole.TEAM_LEADER);
+    }
+
+    public void requireInternshipParticipant(AppUser user) {
+        requireAnyRole(user, UserRole.INTERN, UserRole.TEAM_LEADER);
+    }
+
+    public void requireAnyRole(AppUser user, UserRole... roles) {
+        Set<UserRole> allowed = Set.of(roles);
+        if (!allowed.contains(user.getRole())) {
+            throw new ForbiddenException("Ban khong co quyen thuc hien thao tac nay");
+        }
     }
 
     private String resolveBearerToken(HttpServletRequest request) {

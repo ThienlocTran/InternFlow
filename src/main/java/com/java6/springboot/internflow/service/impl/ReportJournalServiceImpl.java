@@ -128,6 +128,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Transactional
     public ReportEntryResponse saveEntry(AppUser user, ReportEntryRequest request) {
         validateRequest(request);
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc luu nhat ky");
+        }
         ReportDocument document = getOrCreateDocument(user);
         List<ScheduleRegistration> daySchedules = scheduleRegistrationRepository
                 .findByUserAndScheduleDateAndStatus(user, request.workDate(), ScheduleRegistrationStatus.REGISTERED)
@@ -195,6 +198,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Override
     @Transactional
     public MailSubmitResponse submitDailyMail(AppUser user, SubmitDailyReportMailRequest request) {
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc gui mail nhat ky");
+        }
         if (request == null || request.workDate() == null) {
             throw new BusinessException("Ngay gui mail la bat buoc");
         }

@@ -46,6 +46,9 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     @Transactional
     public List<ScheduleRegistrationResponse> register(AppUser user, ScheduleRegistrationRequest request) {
         validateRequest(request);
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc dang ky ca");
+        }
         RolePolicy policy = rolePolicyRepository.findByRole(user.getRole())
                 .orElseThrow(() -> new BusinessException("Chua cau hinh quota cho role " + user.getRole()));
         if (policy.getMaxShiftsPerDay() <= 0) {

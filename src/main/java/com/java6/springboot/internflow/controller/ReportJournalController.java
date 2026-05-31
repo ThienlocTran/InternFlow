@@ -45,7 +45,12 @@ public class ReportJournalController {
     }
 
     @GetMapping("/daily")
-    public ApiResponse<List<DailyReportEntryResponse>> getEntriesByDate(@RequestParam(required = false) LocalDate workDate) {
+    public ApiResponse<List<DailyReportEntryResponse>> getEntriesByDate(
+            HttpServletRequest httpRequest,
+            @RequestParam(required = false) LocalDate workDate
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        currentUserService.requireAdminOrManager(currentUser);
         return ApiResponse.ok("Lay nhat ky theo ngay thanh cong", reportJournalService.getEntriesByDate(workDate));
     }
 
