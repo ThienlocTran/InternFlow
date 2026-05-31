@@ -148,3 +148,14 @@ Nếu gặp vấn đề:
 ---
 
 **Chúc bạn deploy thành công! 🎉**
+
+## Health endpoints and Render keep-alive
+
+Use `GET /api/health/live` for Render health checks and keep-alive pings. This endpoint returns a lightweight liveness response with `dbChecked=false` and does not call repositories, services, `DataSource`, or PostgreSQL.
+
+`GET /api/ping` is also lightweight and remains available for compatibility.
+
+Use `GET /api/health/ready` only for deploy/debug readiness checks. It opens a database connection and validates PostgreSQL, so it can wake Neon compute and must not be used for automatic keep-alive traffic.
+
+The keep-alive scheduler defaults to `KEEP_ALIVE_ENDPOINT=/api/health/live`. Do not configure it to `/api/health/ready` or `/actuator/health`; if Spring Boot Actuator is added later, its default health endpoint may include `DataSourceHealthIndicator` and check the database.
+

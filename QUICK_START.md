@@ -105,7 +105,7 @@ URL của bạn: `https://your-app-name.onrender.com`
 
 Test API:
 ```bash
-curl https://your-app-name.onrender.com/actuator/health
+curl https://your-app-name.onrender.com/api/health/live
 ```
 
 Kết quả mong đợi:

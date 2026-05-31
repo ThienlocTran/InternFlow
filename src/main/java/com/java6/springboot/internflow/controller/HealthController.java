@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -15,12 +14,17 @@ public class HealthController {
 
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "UP");
-        response.put("timestamp", LocalDateTime.now());
-        response.put("service", "InternFlow Backend");
-        response.put("version", "1.0.0");
-        return ResponseEntity.ok(response);
+        return live();
+    }
+
+    @GetMapping("/health/live")
+    public ResponseEntity<Map<String, Object>> live() {
+        return ResponseEntity.ok(Map.of(
+                "status", "UP",
+                "service", "InternFlow",
+                "timestamp", LocalDateTime.now(),
+                "dbChecked", false
+        ));
     }
 
     @GetMapping("/ping")

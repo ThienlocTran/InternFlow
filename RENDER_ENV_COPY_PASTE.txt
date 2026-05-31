@@ -83,4 +83,4 @@ SAU KHI ĐIỀN XONG:
 1. Click "Save Changes"
 2. Render sẽ tự động redeploy (3-5 phút)
 3. Xem Logs để kiểm tra
-4. Test: https://your-app-name.onrender.com/actuator/health
+4. Test: https://your-app-name.onrender.com/api/health/live
