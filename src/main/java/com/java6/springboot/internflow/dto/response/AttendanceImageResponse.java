@@ -14,6 +14,7 @@ public record AttendanceImageResponse(
         AttendanceImagePhase phase,
         LocalTime expectedTime,
         String imageUrl,
+        String sourceReference,
         int displayOrder,
         String note,
         Instant uploadedAt
@@ -27,6 +28,7 @@ public record AttendanceImageResponse(
                 image.getPhase(),
                 image.getExpectedTime(),
                 image.getImageUrl(),
+                image.getSourceReference(),
                 image.getDisplayOrder(),
                 image.getNote(),
                 image.getUploadedAt()

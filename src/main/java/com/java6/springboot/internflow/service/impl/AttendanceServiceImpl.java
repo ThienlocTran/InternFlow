@@ -189,6 +189,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                         .expectedTime(request.expectedTime())
                         .build());
         image.setImageUrl(request.imageUrl().trim());
+        image.setSourceReference(trimToNull(request.sourceReference()));
         image.setDisplayOrder(request.displayOrder() == null ? 0 : request.displayOrder());
         image.setNote(trimToNull(request.note()));
 

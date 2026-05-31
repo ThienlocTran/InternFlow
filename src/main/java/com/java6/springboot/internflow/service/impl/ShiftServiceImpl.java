@@ -15,7 +15,7 @@ public class ShiftServiceImpl implements ShiftService {
 
     @Override
     public List<ShiftResponse> getActiveShifts() {
-        return shiftRepository.findByActiveTrueOrderByStartTimeAsc()
+        return shiftRepository.findByActiveTrueOrderByShiftOrderAscStartTimeAsc()
                 .stream()
                 .map(ShiftResponse::from)
                 .toList();

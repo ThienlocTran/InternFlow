@@ -52,6 +52,10 @@ public class Shift {
     private int maxParticipants = 9;
 
     @Builder.Default
+    @Column(name = "shift_order", nullable = false, columnDefinition = "integer default 0")
+    private int shiftOrder = 0;
+
+    @Builder.Default
     @Column(nullable = false)
     private boolean active = true;
 }

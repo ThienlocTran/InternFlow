@@ -9,6 +9,7 @@ public record AttendanceImageRequest(
         AttendanceImagePhase phase,
         LocalTime expectedTime,
         String imageUrl,
+        String sourceReference,
         Integer displayOrder,
         String note
 ) {

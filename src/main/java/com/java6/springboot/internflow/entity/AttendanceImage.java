@@ -63,6 +63,9 @@ public class AttendanceImage {
     @Column(name = "image_url", nullable = false, length = 500)
     private String imageUrl;
 
+    @Column(name = "source_reference", length = 500)
+    private String sourceReference;
+
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
 

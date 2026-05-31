@@ -57,7 +57,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
         List<Shift> shifts = request.shiftIds().stream()
                 .map(this::findShift)
-                .sorted(Comparator.comparing(Shift::getStartTime))
+                .sorted(Comparator.comparingInt(this::shiftOrder).thenComparing(Shift::getStartTime))
                 .toList();
 
         long existingCount = scheduleRegistrationRepository.countByUserAndScheduleDateAndStatus(
@@ -108,7 +108,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         LocalDate end = endDate == null ? start.plusDays(6) : endDate;
         List<Shift> shifts = shiftRepository.findAll()
                 .stream()
-                .sorted(Comparator.comparing(Shift::getStartTime))
+                .sorted(Comparator.comparingInt(this::shiftOrder).thenComparing(Shift::getStartTime))
                 .toList();
 
         return start.datesUntil(end.plusDays(1))
@@ -237,6 +237,9 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     private int shiftOrder(Shift shift) {
+        if (shift.getShiftOrder() > 0) {
+            return shift.getShiftOrder();
+        }
         String code = shift.getCode() == null ? "" : shift.getCode();
         int underscore = code.lastIndexOf('_');
         if (underscore >= 0 && underscore + 1 < code.length()) {
