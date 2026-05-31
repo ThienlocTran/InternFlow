@@ -1,5 +1,6 @@
 package com.java6.springboot.internflow.service.impl;
 
+import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
@@ -45,6 +46,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -96,6 +98,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Value("${internflow.mail.cc:xuandat210425cty@gmail.com}")
     private String reportMailCc;
+
+    @Value("${internflow.image-cleanup.retention-after-mail-days:30}")
+    private int retentionAfterMailDays;
 
     @Override
     @Transactional
@@ -268,6 +273,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         try {
             sendMailWithGmailApi(user, request.googleAccessToken(), subject, buildMailBody(user, dailyEntry, schedules, attendances), attachments);
             emailLog.setStatus(EmailStatus.SENT);
+            markAttendanceImagesRetained(attendances, emailLog.getSentAt());
         } catch (Exception exception) {
             emailLog.setStatus(EmailStatus.FAILED);
             emailLog.setErrorMessage(exception.getMessage());
@@ -277,6 +283,45 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
         emailLogRepository.save(emailLog);
         return new MailSubmitResponse(reportMailTo, reportMailCc, subject, attachmentName);
+    }
+
+    @Override
+    @Transactional
+    public MailSubmitResponse confirmDailyMailSent(AppUser user, ConfirmDailyReportMailRequest request) {
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc xac nhan gui mail nhat ky");
+        }
+        if (request == null || request.workDate() == null) {
+            throw new BusinessException("Ngay xac nhan gui mail la bat buoc");
+        }
+
+        ReportDocument document = reportDocumentRepository.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+        ReportEntry dailyEntry = reportEntryRepository.findByDocumentAndWorkDate(document, request.workDate())
+                .orElseThrow(() -> new BusinessException("Ngay nay chua co noi dung nhat ky"));
+        if (dailyEntry.getPageCount() < dailyEntry.getRequiredPages()) {
+            throw new BusinessException("Nhat ky ngay nay chua du so trang yeu cau");
+        }
+
+        List<Attendance> attendances = attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(
+                user,
+                request.workDate()
+        );
+        Instant confirmedAt = Instant.now();
+        String subject = user.getFullName() + ", xac nhan da gui mail ngay " + request.workDate().format(SUBJECT_DATE_FORMAT);
+        EmailLog emailLog = EmailLog.builder()
+                .user(user)
+                .subject(subject)
+                .receivers(reportMailTo)
+                .ccReceivers(reportMailCc)
+                .workDate(request.workDate())
+                .sentAt(confirmedAt)
+                .attachmentCount(0)
+                .status(EmailStatus.MANUAL_CONFIRMED)
+                .build();
+        emailLogRepository.save(emailLog);
+        markAttendanceImagesRetained(attendances, confirmedAt);
+        return new MailSubmitResponse(reportMailTo, reportMailCc, subject, null);
     }
 
     private ReportDocument getOrCreateDocument(AppUser user) {
@@ -438,6 +483,17 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             }
         }
         return attachments;
+    }
+
+    private void markAttendanceImagesRetained(List<Attendance> attendances, Instant sentAt) {
+        List<UUID> attendanceIds = attendances.stream()
+                .map(Attendance::getId)
+                .toList();
+        if (attendanceIds.isEmpty()) {
+            return;
+        }
+        Instant retentionUntil = sentAt.plus(Duration.ofDays(Math.max(1, retentionAfterMailDays)));
+        attendanceImageRepository.markRetentionUntilForAttendances(attendanceIds, retentionUntil);
     }
 
     private UploadedDocument decodeUploadedDocument(SubmitDailyReportMailRequest request) {

@@ -1,5 +1,6 @@
 package com.java6.springboot.internflow.service;
 
+import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
@@ -24,6 +25,8 @@ public interface ReportJournalService {
     List<ReportRevisionResponse> getRevisions(AppUser currentUser, UUID entryId);
 
     MailSubmitResponse submitDailyMail(AppUser currentUser, SubmitDailyReportMailRequest request);
+
+    MailSubmitResponse confirmDailyMailSent(AppUser currentUser, ConfirmDailyReportMailRequest request);
 
     List<EmailLogResponse> getEmailLogs(AppUser user);
 }

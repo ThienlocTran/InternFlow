@@ -1,6 +1,7 @@
 package com.java6.springboot.internflow.controller;
 
 import com.java6.springboot.internflow.dto.ApiResponse;
+import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
@@ -81,6 +82,16 @@ public class ReportJournalController {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
         currentUserService.rejectMismatchedRequestUser(currentUser, request == null ? null : request.userId());
         return ApiResponse.ok("Gui mail cuoi ngay thanh cong", reportJournalService.submitDailyMail(currentUser, request));
+    }
+
+    @PostMapping("/confirm-mail-sent")
+    public ApiResponse<MailSubmitResponse> confirmDailyMailSent(
+            HttpServletRequest httpRequest,
+            @RequestBody ConfirmDailyReportMailRequest request
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        currentUserService.rejectMismatchedRequestUser(currentUser, request == null ? null : request.userId());
+        return ApiResponse.ok("Xac nhan da gui mail cuoi ngay thanh cong", reportJournalService.confirmDailyMailSent(currentUser, request));
     }
 
     @GetMapping("/email-logs")
