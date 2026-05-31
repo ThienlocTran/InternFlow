@@ -1,10 +1,61 @@
--- R2-S1-DB-01: Configurable compliance foundation
+-- R2-S1-DB-01/R2-S1-SHIFT-01: current schema rollup
 -- Safe for an existing PostgreSQL database with sample data.
 -- Run on local/staging with psql after backup/snapshot:
 --   \i db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql
 -- Idempotent: safe to rerun; keeps existing rows.
+-- Fresh DB baseline: db/init_production.sql
 
 create extension if not exists pgcrypto;
+
+alter table if exists role_policies
+    add column if not exists night_shift_bonus_threshold integer,
+    add column if not exists night_shift_bonus_amount integer,
+    add column if not exists leadership_bonus_threshold integer,
+    add column if not exists leadership_bonus_amount integer;
+
+update role_policies
+set
+    night_shift_bonus_threshold = case when role = 'INTERN' then 6 else 0 end,
+    night_shift_bonus_amount = case when role = 'INTERN' then 1 else 0 end,
+    leadership_bonus_threshold = case when role = 'TEAM_LEADER' then 6 else 0 end,
+    leadership_bonus_amount = case when role = 'TEAM_LEADER' then 1 else 0 end
+where night_shift_bonus_threshold is null
+   or night_shift_bonus_amount is null
+   or leadership_bonus_threshold is null
+   or leadership_bonus_amount is null;
+
+alter table if exists role_policies
+    alter column night_shift_bonus_threshold set default 0,
+    alter column night_shift_bonus_threshold set not null,
+    alter column night_shift_bonus_amount set default 0,
+    alter column night_shift_bonus_amount set not null,
+    alter column leadership_bonus_threshold set default 0,
+    alter column leadership_bonus_threshold set not null,
+    alter column leadership_bonus_amount set default 0,
+    alter column leadership_bonus_amount set not null;
+
+alter table if exists attendances
+    alter column checkin_group_image_url drop not null,
+    alter column checkout_group_image_url drop not null;
+
+create table if not exists email_logs (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references app_users(id) on delete cascade,
+    subject varchar(500) not null,
+    receivers text not null,
+    cc_receivers text,
+    work_date date not null,
+    sent_at timestamp not null default now(),
+    status varchar(50) not null,
+    error_message text,
+    attachment_count integer default 0,
+    created_at timestamp not null default now()
+);
+
+create index if not exists idx_email_logs_user_id on email_logs (user_id);
+create index if not exists idx_email_logs_work_date on email_logs (work_date desc);
+create index if not exists idx_email_logs_sent_at on email_logs (sent_at desc);
+create index if not exists idx_email_logs_status on email_logs (status);
 
 alter table if exists shifts
     add column if not exists shift_order integer;
@@ -31,6 +82,11 @@ update shifts
 set shift_order = 0
 where shift_order is null;
 
+update shifts set start_time = '08:00:00', end_time = '11:30:00' where code = 'SHIFT_1';
+update shifts set start_time = '13:30:00', end_time = '17:00:00' where code = 'SHIFT_2';
+update shifts set start_time = '17:00:00', end_time = '19:40:00' where code = 'SHIFT_3';
+update shifts set start_time = '19:40:00', end_time = '21:40:00' where code = 'SHIFT_4';
+
 update shifts
 set display_group = case
     when code in ('SHIFT_3', 'SHIFT_4') then 'Buoi toi'
@@ -56,6 +112,38 @@ alter table if exists attendance_images
 
 alter table if exists report_entries
     add column if not exists source_references text;
+
+alter table if exists attendance_images
+    add column if not exists storage_provider varchar(50) default 'CLOUDINARY',
+    add column if not exists public_id varchar(500),
+    add column if not exists thumbnail_url varchar(500),
+    add column if not exists file_size_bytes bigint,
+    add column if not exists mime_type varchar(100),
+    add column if not exists image_width integer,
+    add column if not exists image_height integer,
+    add column if not exists retention_until timestamp,
+    add column if not exists deleted_at timestamp,
+    add column if not exists delete_status varchar(30) default 'ACTIVE';
+
+update attendance_images
+set storage_provider = 'CLOUDINARY'
+where storage_provider is null
+  and image_url like '%cloudinary.com%';
+
+update attendance_images
+set thumbnail_url = image_url
+where thumbnail_url is null
+  and image_url is not null;
+
+update attendance_images
+set delete_status = 'ACTIVE'
+where delete_status is null;
+
+create index if not exists idx_attendance_images_public_id
+    on attendance_images (public_id);
+
+create index if not exists idx_attendance_images_retention
+    on attendance_images (retention_until, deleted_at, delete_status);
 
 do $$
 declare
@@ -221,4 +309,14 @@ comment on table photo_requirements is 'Cau hinh yeu cau anh diem danh theo role
 comment on column photo_requirements.shift_id is 'Null = default cho moi ca; co gia tri = override cho ca cu the.';
 comment on column photo_requirements.interval_minutes is 'Khoang lap anh giua ca; null cho moc checkin/checkout co dinh.';
 comment on column attendance_images.source_reference is 'Nguon tham chieu/metadata cua anh, dung cho compliance audit.';
+comment on column attendance_images.storage_provider is 'Storage backend for this image, currently CLOUDINARY for new uploads.';
+comment on column attendance_images.public_id is 'Cloudinary public_id used for future delete API calls; legacy rows may be null.';
+comment on column attendance_images.thumbnail_url is 'Lightweight image URL for dashboard/list rendering; falls back to image_url for legacy rows.';
+comment on column attendance_images.file_size_bytes is 'Uploaded image size reported by Cloudinary or frontend/backend when available.';
+comment on column attendance_images.mime_type is 'Uploaded image MIME type, for example image/webp or image/jpeg.';
+comment on column attendance_images.image_width is 'Stored image width in pixels when available.';
+comment on column attendance_images.image_height is 'Stored image height in pixels when available.';
+comment on column attendance_images.retention_until is 'Future cleanup eligibility timestamp.';
+comment on column attendance_images.deleted_at is 'Timestamp set after Cloudinary delete succeeds.';
+comment on column attendance_images.delete_status is 'Lifecycle marker for cleanup, e.g. ACTIVE, DELETE_FAILED, DELETED.';
 comment on column report_entries.source_references is 'Nguon tham khao co cau truc hoac snapshot link phuc vu compliance audit.';

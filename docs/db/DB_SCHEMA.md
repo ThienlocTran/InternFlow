@@ -8,7 +8,7 @@ src/main/java/com/java6/springboot/internflow/entity/*.java
 src/main/java/com/java6/springboot/internflow/enums/*.java
 ```
 
-`db/init_production.sql` là baseline cho DB PostgreSQL mới. Không chạy file này trên DB đã có dữ liệu. DB đang chạy cần nâng cấp bằng `db/migrations/*.sql` theo thứ tự ngày.
+`db/init_production.sql` là baseline cho DB PostgreSQL mới. Không chạy file này trên DB đã có dữ liệu. DB đang chạy cần nâng cấp bằng rollup migration `db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql`.
 
 ## Quy ước
 
@@ -195,7 +195,7 @@ Demo users/admin emails vẫn do `DataInitializer` và env/application config ki
 | File/folder | Role |
 | --- | --- |
 | `db/init_production.sql` | Schema baseline cho DB mới |
-| `db/migrations/*.sql` | Patch cho DB đang có dữ liệu |
+| `db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql` | Rollup patch cho DB đang có dữ liệu |
 | `docs/db/DB_SCHEMA.md` | Tài liệu schema tổng hợp |
 | `docs/db/DB_ERD.md` | Redirect legacy tới `docs/db/DB_SCHEMA.md` |
 | `INTERNFLOW_DATABASE_RULES.md` | Rule bắt buộc đọc trước khi sửa DB/schema/seed/init |

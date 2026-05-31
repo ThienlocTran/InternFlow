@@ -94,7 +94,7 @@ git push origin main
   ```
 - Chạy migration:
   ```sql
-  \i db/migrations/2026-05-12-role-policy-night-bonus.sql
+\i db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql
   ```
 
 ### 4. CORS Configuration

@@ -121,7 +121,7 @@ Vào Web Service → Environment → Add Environment Variables:
 psql <connection-string>
 
 # Trong psql
-\i db/migrations/2026-05-12-role-policy-night-bonus.sql
+\i db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql
 \dt  # List tables
 \q   # Quit
 ```

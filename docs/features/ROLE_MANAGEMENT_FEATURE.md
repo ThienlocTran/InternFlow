@@ -74,7 +74,7 @@ Body: { "role": "INTERN" }
 
 ### Documentation
 - `../api/ADMIN_ROLE_MANAGEMENT_API.md` - Chi tiết API đầy đủ
-- `db/migrations/2026-05-18-add-role-management-notes.sql` - SQL notes
+- `../api/ADMIN_ROLE_MANAGEMENT_API.md` - API details
 
 ## Testing
 
