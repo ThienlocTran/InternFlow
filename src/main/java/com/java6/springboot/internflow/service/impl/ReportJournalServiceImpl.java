@@ -32,6 +32,7 @@ import com.java6.springboot.internflow.repository.ReportEntryRepository;
 import com.java6.springboot.internflow.repository.ReportRevisionRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.service.ReportJournalService;
+import com.java6.springboot.internflow.util.ProfileCompleteness;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
@@ -203,6 +204,10 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         }
 
         AppUser user = findUser(request.userId());
+        List<String> missingProfileFields = ProfileCompleteness.missingRequiredFields(user);
+        if (!missingProfileFields.isEmpty()) {
+            throw new BusinessException("Ho so sinh vien chua du thong tin bat buoc: " + String.join(", ", missingProfileFields));
+        }
         String tokenEmail = fetchGoogleEmail(request.googleAccessToken());
         if (!user.getEmail().equalsIgnoreCase(tokenEmail)) {
             throw new BusinessException("Token Gmail khong khop voi email dang nhap");
