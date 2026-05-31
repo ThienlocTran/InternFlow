@@ -32,7 +32,7 @@ public class AdminStudentController {
             HttpServletRequest httpRequest,
             @PathVariable UUID studentId
     ) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Lay chi tiet sinh vien thanh cong", adminStudentDetailService.getStudentDetail(studentId));
     }
 
@@ -42,12 +42,12 @@ public class AdminStudentController {
             @PathVariable UUID userId,
             @RequestBody UpdateUserRoleRequest request
     ) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Cap nhat role thanh cong", userService.updateRole(userId, request.role()));
     }
 
-    private void requireAdminOrManager(HttpServletRequest httpRequest) {
+    private void requireAdmin(HttpServletRequest httpRequest) {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
-        currentUserService.requireAdminOrManager(currentUser);
+        currentUserService.requireAdmin(currentUser);
     }
 }

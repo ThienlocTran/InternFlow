@@ -29,30 +29,30 @@ public class InternshipCohortController {
 
     @PostMapping
     public ApiResponse<InternshipCohortResponse> create(HttpServletRequest httpRequest, @RequestBody InternshipCohortRequest request) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Tao khoa thuc tap thanh cong", internshipCohortService.create(request));
     }
 
     @GetMapping
     public ApiResponse<List<InternshipCohortResponse>> getAll(HttpServletRequest httpRequest) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Lay danh sach khoa thanh cong", internshipCohortService.getAll());
     }
 
     @GetMapping("/{cohortId}/students")
     public ApiResponse<List<UserResponse>> getStudents(HttpServletRequest httpRequest, @PathVariable UUID cohortId) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Lay sinh vien trong khoa thanh cong", internshipCohortService.getStudents(cohortId));
     }
 
     @GetMapping("/students/{studentId}")
     public ApiResponse<StudentDetailResponse> getStudentDetail(HttpServletRequest httpRequest, @PathVariable UUID studentId) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Lay chi tiet sinh vien thanh cong", internshipCohortService.getStudentDetail(studentId));
     }
 
-    private void requireAdminOrManager(HttpServletRequest httpRequest) {
+    private void requireAdmin(HttpServletRequest httpRequest) {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
-        currentUserService.requireAdminOrManager(currentUser);
+        currentUserService.requireAdmin(currentUser);
     }
 }

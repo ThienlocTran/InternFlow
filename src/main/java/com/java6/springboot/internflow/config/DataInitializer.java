@@ -65,7 +65,6 @@ public class DataInitializer implements CommandLineRunner {
     private void seedRolePolicies() {
         createPolicyIfMissing(UserRole.INTERN, 2, 6, 60, 10, 6, 1, 0, 0);
         createPolicyIfMissing(UserRole.TEAM_LEADER, 3, 9, 60, 10, 6, 1, 6, 1);
-        createPolicyIfMissing(UserRole.MANAGER, 0, 0, 0, 0, 0, 0, 0, 0);
         createPolicyIfMissing(UserRole.ADMIN, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 

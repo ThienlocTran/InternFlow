@@ -30,7 +30,7 @@ create table if not exists app_users (
     active boolean not null default true,
     created_at timestamp not null default now(),
     updated_at timestamp not null default now(),
-    constraint ck_app_users_role check (role in ('INTERN', 'TEAM_LEADER', 'MANAGER', 'ADMIN'))
+    constraint ck_app_users_role check (role in ('INTERN', 'TEAM_LEADER', 'ADMIN'))
 );
 
 create table if not exists shifts (
@@ -62,7 +62,7 @@ create table if not exists role_policies (
     night_shift_bonus_amount integer not null default 0,
     leadership_bonus_threshold integer not null default 0,
     leadership_bonus_amount integer not null default 0,
-    constraint ck_role_policies_role check (role in ('INTERN', 'TEAM_LEADER', 'MANAGER', 'ADMIN')),
+    constraint ck_role_policies_role check (role in ('INTERN', 'TEAM_LEADER', 'ADMIN')),
     constraint ck_role_policies_non_negative check (
         max_shifts_per_day >= 0
         and target_shifts_per_week >= 0
@@ -234,7 +234,7 @@ create table if not exists photo_requirements (
     updated_at timestamp not null default now(),
     constraint ck_photo_requirements_required_count check (required_count >= 0),
     constraint ck_photo_requirements_interval_minutes check (interval_minutes is null or interval_minutes > 0),
-    constraint ck_photo_requirements_role check (role in ('INTERN', 'TEAM_LEADER', 'MANAGER', 'ADMIN')),
+    constraint ck_photo_requirements_role check (role in ('INTERN', 'TEAM_LEADER', 'ADMIN')),
     constraint ck_photo_requirements_image_type check (image_type in ('PERSONAL_TIMEMARK', 'GROUP')),
     constraint ck_photo_requirements_phase check (phase in ('CHECKIN', 'DURING_SHIFT', 'CHECKOUT'))
 );
@@ -287,7 +287,6 @@ insert into role_policies (
 values
     ('INTERN', 2, 6, 60, 10, 6, 1, 0, 0),
     ('TEAM_LEADER', 3, 9, 60, 10, 6, 1, 6, 1),
-    ('MANAGER', 0, 0, 0, 0, 0, 0, 0, 0),
     ('ADMIN', 0, 0, 0, 0, 0, 0, 0, 0)
 on conflict (role) do nothing;
 

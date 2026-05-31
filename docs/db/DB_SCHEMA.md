@@ -69,7 +69,7 @@ erDiagram
 | `school` | `varchar(120)` | yes | | Trường |
 | `phone` | `varchar(30)` | yes | | SĐT |
 | `cohort_id` | `uuid` | yes | FK `internship_cohorts.id` | Khóa thực tập |
-| `role` | `varchar(30)` | no | `INTERN` | `INTERN`, `TEAM_LEADER`, `MANAGER`, `ADMIN` |
+| `role` | `varchar(30)` | no | `INTERN` | `INTERN`, `TEAM_LEADER`, `ADMIN` |
 | `active` | `boolean` | no | `true` | Đang hoạt động |
 | `created_at` | `timestamp` | no | `now()` | Tạo lúc |
 | `updated_at` | `timestamp` | no | `now()` | Cập nhật lúc |
@@ -185,7 +185,7 @@ Baseline seed system data:
 | Table | Rows |
 | --- | --- |
 | `shifts` | `SHIFT_1..SHIFT_4` |
-| `role_policies` | `INTERN`, `TEAM_LEADER`, `MANAGER`, `ADMIN` |
+| `role_policies` | `INTERN`, `TEAM_LEADER`, `ADMIN` |
 | `photo_requirements` | 12 default rules cho `INTERN` và `TEAM_LEADER` |
 
 Demo users/admin emails vẫn do `DataInitializer` và env/application config kiểm soát, không hard-code trong baseline SQL.

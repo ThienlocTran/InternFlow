@@ -35,7 +35,7 @@ public class TeamController {
 
     @PostMapping
     public ApiResponse<TeamResponse> createTeam(HttpServletRequest httpRequest, @RequestBody TeamRequest request) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Tao nhom thanh cong", teamService.createTeam(request));
     }
 
@@ -45,13 +45,13 @@ public class TeamController {
             @PathVariable UUID teamId,
             @RequestBody AddTeamMemberRequest request
     ) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Them thanh vien thanh cong", teamService.addMember(teamId, request));
     }
 
     @GetMapping("/{teamId}/members")
     public ApiResponse<List<UserResponse>> getMembers(HttpServletRequest httpRequest, @PathVariable UUID teamId) {
-        requireAdminOrManager(httpRequest);
+        requireAdmin(httpRequest);
         return ApiResponse.ok("Lay thanh vien nhom thanh cong", teamService.getMembers(teamId));
     }
 
@@ -91,9 +91,9 @@ public class TeamController {
         return ApiResponse.ok("Lay chi tiet day du thanh vien thanh cong", teamService.getMemberFullDetail(leaderId, memberId, date));
     }
 
-    private void requireAdminOrManager(HttpServletRequest httpRequest) {
+    private void requireAdmin(HttpServletRequest httpRequest) {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
-        currentUserService.requireAdminOrManager(currentUser);
+        currentUserService.requireAdmin(currentUser);
     }
 
     private AppUser requireTeamLeader(HttpServletRequest httpRequest) {

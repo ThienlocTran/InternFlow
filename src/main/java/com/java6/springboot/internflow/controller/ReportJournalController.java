@@ -51,7 +51,7 @@ public class ReportJournalController {
             @RequestParam(required = false) LocalDate workDate
     ) {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
-        currentUserService.requireAdminOrManager(currentUser);
+        currentUserService.requireAdmin(currentUser);
         return ApiResponse.ok("Lay nhat ky theo ngay thanh cong", reportJournalService.getEntriesByDate(workDate));
     }
 

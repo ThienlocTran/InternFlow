@@ -58,7 +58,7 @@ public class UserController {
     public ApiResponse<List<UserResponse>> getAll(HttpServletRequest httpRequest) {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
         if (!currentUserService.isPrivileged(currentUser)) {
-            throw new ForbiddenException("Chi admin hoac manager duoc xem danh sach user");
+            throw new ForbiddenException("Chi admin duoc xem danh sach user");
         }
         return ApiResponse.ok("Lay danh sach user thanh cong", userService.getAll());
     }

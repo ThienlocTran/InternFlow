@@ -6,8 +6,7 @@ Admin có thể thay đổi role của user trong hệ thống để thăng/giá
 ## Các Role trong hệ thống
 1. **INTERN** - Sinh viên thực tập thông thường
 2. **TEAM_LEADER** - Trưởng nhóm, có quyền quản lý team
-3. **MANAGER** - Quản lý cấp cao
-4. **ADMIN** - Quản trị viên hệ thống (không thể thay đổi qua API)
+3. **ADMIN** - Quản trị viên hệ thống (không thể thay đổi qua API)
 
 ## API Endpoint
 ```
@@ -56,8 +55,6 @@ Body: { "role": "INTERN" }
 
 ### ✅ Được phép
 - INTERN ↔ TEAM_LEADER
-- INTERN ↔ MANAGER
-- TEAM_LEADER ↔ MANAGER
 
 ### ❌ Không được phép
 - Thay đổi role của ADMIN

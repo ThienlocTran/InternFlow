@@ -141,7 +141,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private boolean isValidRoleTransition(UserRole from, UserRole to) {
-        Set<UserRole> allowedRoles = Set.of(UserRole.INTERN, UserRole.TEAM_LEADER, UserRole.MANAGER);
+        Set<UserRole> allowedRoles = Set.of(UserRole.INTERN, UserRole.TEAM_LEADER);
         return allowedRoles.contains(from) && allowedRoles.contains(to);
     }
 

@@ -6,6 +6,34 @@
 -- Fresh DB baseline: db/init_production.sql
 
 create extension if not exists pgcrypto;
+-- Remove legacy MANAGER role. Current supported roles: INTERN, TEAM_LEADER, ADMIN.
+update app_users
+set role = 'TEAM_LEADER', updated_at = now()
+where role = 'MANAGER';
+
+delete from role_policies
+where role = 'MANAGER';
+
+delete from photo_requirements
+where role = 'MANAGER';
+
+alter table if exists app_users
+    drop constraint if exists ck_app_users_role;
+
+alter table if exists app_users
+    add constraint ck_app_users_role check (role in ('INTERN', 'TEAM_LEADER', 'ADMIN'));
+
+alter table if exists role_policies
+    drop constraint if exists ck_role_policies_role;
+
+alter table if exists role_policies
+    add constraint ck_role_policies_role check (role in ('INTERN', 'TEAM_LEADER', 'ADMIN'));
+
+alter table if exists photo_requirements
+    drop constraint if exists ck_photo_requirements_role;
+
+alter table if exists photo_requirements
+    add constraint ck_photo_requirements_role check (role in ('INTERN', 'TEAM_LEADER', 'ADMIN'));
 
 alter table if exists role_policies
     add column if not exists night_shift_bonus_threshold integer,
@@ -228,7 +256,7 @@ create table if not exists photo_requirements (
     updated_at timestamp not null default now(),
     constraint ck_photo_requirements_required_count check (required_count >= 0),
     constraint ck_photo_requirements_interval_minutes check (interval_minutes is null or interval_minutes > 0),
-    constraint ck_photo_requirements_role check (role in ('INTERN', 'TEAM_LEADER', 'MANAGER', 'ADMIN')),
+    constraint ck_photo_requirements_role check (role in ('INTERN', 'TEAM_LEADER', 'ADMIN')),
     constraint ck_photo_requirements_image_type check (image_type in ('PERSONAL_TIMEMARK', 'GROUP')),
     constraint ck_photo_requirements_phase check (phase in ('CHECKIN', 'DURING_SHIFT', 'CHECKOUT'))
 );
@@ -320,3 +348,14 @@ comment on column attendance_images.retention_until is 'Future cleanup eligibili
 comment on column attendance_images.deleted_at is 'Timestamp set after Cloudinary delete succeeds.';
 comment on column attendance_images.delete_status is 'Lifecycle marker for cleanup, e.g. ACTIVE, DELETE_FAILED, DELETED.';
 comment on column report_entries.source_references is 'Nguon tham khao co cau truc hoac snapshot link phuc vu compliance audit.';
+
+
+update app_users
+set role = 'TEAM_LEADER', updated_at = now()
+where role = 'MANAGER';
+
+delete from role_policies
+where role = 'MANAGER';
+
+delete from photo_requirements
+where role = 'MANAGER';

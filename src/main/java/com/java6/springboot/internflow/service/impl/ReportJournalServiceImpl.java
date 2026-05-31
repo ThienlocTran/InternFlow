@@ -679,7 +679,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     private void assertCanReadEntry(AppUser currentUser, ReportEntry entry) {
         boolean owner = entry.getDocument().getUser().getId().equals(currentUser.getId());
-        boolean privileged = currentUser.getRole() == UserRole.ADMIN || currentUser.getRole() == UserRole.MANAGER;
+        boolean privileged = currentUser.getRole() == UserRole.ADMIN;
         if (!owner && !privileged) {
             throw new ForbiddenException("Ban khong co quyen xem lich su nhat ky cua user khac");
         }

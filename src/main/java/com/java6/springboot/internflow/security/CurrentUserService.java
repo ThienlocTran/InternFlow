@@ -57,11 +57,11 @@ public class CurrentUserService {
     }
 
     public boolean isPrivileged(AppUser user) {
-        return user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.MANAGER;
+        return user.getRole() == UserRole.ADMIN;
     }
 
-    public void requireAdminOrManager(AppUser user) {
-        requireAnyRole(user, UserRole.ADMIN, UserRole.MANAGER);
+    public void requireAdmin(AppUser user) {
+        requireAnyRole(user, UserRole.ADMIN);
     }
 
     public void requireTeamLeader(AppUser user) {
