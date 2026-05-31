@@ -6,7 +6,10 @@ import com.java6.springboot.internflow.dto.request.CheckinRequest;
 import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
+import com.java6.springboot.internflow.entity.AppUser;
+import com.java6.springboot.internflow.security.CurrentUserService;
 import com.java6.springboot.internflow.service.AttendanceService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -26,46 +29,65 @@ import org.springframework.web.bind.annotation.RestController;
 public class AttendanceController {
 
     private final AttendanceService attendanceService;
+    private final CurrentUserService currentUserService;
 
     @GetMapping
     public ApiResponse<List<AttendanceResponse>> getUserAttendances(
-            @RequestParam UUID userId,
+            HttpServletRequest httpRequest,
+            @RequestParam(required = false) UUID userId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {
-        return ApiResponse.ok("Lay danh sach diem danh thanh cong", attendanceService.getUserAttendances(userId, date));
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        AppUser targetUser = currentUserService.resolveRequestedUser(currentUser, userId);
+        return ApiResponse.ok("Lay danh sach diem danh thanh cong", attendanceService.getUserAttendances(targetUser, date));
     }
 
     @PostMapping("/checkin")
-    public ApiResponse<AttendanceResponse> checkin(@RequestBody CheckinRequest request) {
-        return ApiResponse.ok("Checkin thanh cong", attendanceService.checkin(request));
+    public ApiResponse<AttendanceResponse> checkin(
+            HttpServletRequest httpRequest,
+            @RequestBody CheckinRequest request
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        currentUserService.rejectMismatchedRequestUser(currentUser, request == null ? null : request.userId());
+        return ApiResponse.ok("Checkin thanh cong", attendanceService.checkin(currentUser, request));
     }
 
     @PostMapping("/{attendanceId}/checkout")
     public ApiResponse<AttendanceResponse> checkout(
             @PathVariable UUID attendanceId,
+            HttpServletRequest httpRequest,
             @RequestBody CheckoutRequest request
     ) {
-        return ApiResponse.ok("Checkout thanh cong", attendanceService.checkout(attendanceId, request));
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        return ApiResponse.ok("Checkout thanh cong", attendanceService.checkout(currentUser, attendanceId, request));
     }
 
     @PostMapping("/{attendanceId}/checkout-draft")
     public ApiResponse<AttendanceResponse> saveCheckoutDraft(
             @PathVariable UUID attendanceId,
+            HttpServletRequest httpRequest,
             @RequestBody CheckoutRequest request
     ) {
-        return ApiResponse.ok("Luu anh checkout tam thanh cong", attendanceService.saveCheckoutDraft(attendanceId, request));
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        return ApiResponse.ok("Luu anh checkout tam thanh cong", attendanceService.saveCheckoutDraft(currentUser, attendanceId, request));
     }
 
     @PostMapping("/{attendanceId}/images")
     public ApiResponse<AttendanceImageResponse> addImage(
             @PathVariable UUID attendanceId,
+            HttpServletRequest httpRequest,
             @RequestBody AttendanceImageRequest request
     ) {
-        return ApiResponse.ok("Them anh diem danh thanh cong", attendanceService.addImage(attendanceId, request));
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        return ApiResponse.ok("Them anh diem danh thanh cong", attendanceService.addImage(currentUser, attendanceId, request));
     }
 
     @GetMapping("/{attendanceId}/images")
-    public ApiResponse<List<AttendanceImageResponse>> getImages(@PathVariable UUID attendanceId) {
-        return ApiResponse.ok("Lay danh sach anh diem danh thanh cong", attendanceService.getImages(attendanceId));
+    public ApiResponse<List<AttendanceImageResponse>> getImages(
+            HttpServletRequest httpRequest,
+            @PathVariable UUID attendanceId
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        return ApiResponse.ok("Lay danh sach anh diem danh thanh cong", attendanceService.getImages(currentUser, attendanceId));
     }
 }

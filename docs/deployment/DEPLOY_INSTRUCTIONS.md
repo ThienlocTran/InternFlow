@@ -77,7 +77,7 @@ URL của bạn: `https://internflow-backend.onrender.com` (hoặc tên bạn đ
 
 ### Test Health Check:
 ```bash
-curl https://internflow-backend.onrender.com/actuator/health
+curl https://internflow-backend.onrender.com/api/health/live
 ```
 
 Kết quả mong đợi:

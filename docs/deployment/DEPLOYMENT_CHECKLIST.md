@@ -95,6 +95,11 @@ Vào Web Service → Environment → Add Environment Variables:
 - [ ] Application start thành công
 - [ ] Service status: "Live"
 
+
+### 4. Keep-alive endpoint
+- [ ] `KEEP_ALIVE_ENDPOINT` = `/api/health/live`
+- [ ] Khong dung `/api/health/ready` hoac `/actuator/health` cho keep-alive vi cac endpoint nay co the cham database va lam Neon compute active.
+
 ## Sau khi Deploy
 
 ### 1. Cập nhật Google OAuth
@@ -116,7 +121,7 @@ Vào Web Service → Environment → Add Environment Variables:
 psql <connection-string>
 
 # Trong psql
-\i db/migrations/2026-05-12-role-policy-night-bonus.sql
+\i db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql
 \dt  # List tables
 \q   # Quit
 ```
@@ -125,9 +130,9 @@ psql <connection-string>
 
 #### Health Check
 ```bash
-curl https://your-app-name.onrender.com/actuator/health
+curl https://your-app-name.onrender.com/api/health/live
 ```
-- [ ] Response: `{"status":"UP"}`
+- [ ] Response includes `"status":"UP"` and `"dbChecked":false`
 
 #### Test Authentication
 ```bash

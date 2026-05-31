@@ -1,5 +1,6 @@
 package com.java6.springboot.internflow.service.impl;
 
+import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
@@ -22,6 +23,7 @@ import com.java6.springboot.internflow.enums.ReportEntryStatus;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
+import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
@@ -32,6 +34,7 @@ import com.java6.springboot.internflow.repository.ReportEntryRepository;
 import com.java6.springboot.internflow.repository.ReportRevisionRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.service.ReportJournalService;
+import com.java6.springboot.internflow.util.ProfileCompleteness;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
@@ -43,6 +46,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -95,10 +99,12 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Value("${internflow.mail.cc:xuandat210425cty@gmail.com}")
     private String reportMailCc;
 
+    @Value("${internflow.image-cleanup.retention-after-mail-days:30}")
+    private int retentionAfterMailDays;
+
     @Override
     @Transactional
-    public ReportProgressResponse getProgress(UUID userId) {
-        AppUser user = findUser(userId);
+    public ReportProgressResponse getProgress(AppUser user) {
         ReportDocument document = getOrCreateDocument(user);
         return new ReportProgressResponse(
                 ReportDocumentResponse.from(document),
@@ -125,9 +131,11 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional
-    public ReportEntryResponse saveEntry(ReportEntryRequest request) {
+    public ReportEntryResponse saveEntry(AppUser user, ReportEntryRequest request) {
         validateRequest(request);
-        AppUser user = findUser(request.userId());
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc luu nhat ky");
+        }
         ReportDocument document = getOrCreateDocument(user);
         List<ScheduleRegistration> daySchedules = scheduleRegistrationRepository
                 .findByUserAndScheduleDateAndStatus(user, request.workDate(), ScheduleRegistrationStatus.REGISTERED)
@@ -173,9 +181,10 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ReportRevisionResponse> getRevisions(UUID entryId) {
+    public List<ReportRevisionResponse> getRevisions(AppUser currentUser, UUID entryId) {
         ReportEntry entry = reportEntryRepository.findById(entryId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay nhat ky"));
+        assertCanReadEntry(currentUser, entry);
         return reportRevisionRepository.findByEntryOrderByCreatedAtDesc(entry)
                 .stream()
                 .map(ReportRevisionResponse::from)
@@ -184,8 +193,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<EmailLogResponse> getEmailLogs(UUID userId) {
-        AppUser user = findUser(userId);
+    public List<EmailLogResponse> getEmailLogs(AppUser user) {
         return emailLogRepository.findByUserOrderBySentAtDesc(user)
                 .stream()
                 .map(EmailLogResponse::from)
@@ -194,15 +202,21 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     @Override
     @Transactional
-    public MailSubmitResponse submitDailyMail(SubmitDailyReportMailRequest request) {
-        if (request == null || request.userId() == null || request.workDate() == null) {
-            throw new BusinessException("User id va ngay gui mail la bat buoc");
+    public MailSubmitResponse submitDailyMail(AppUser user, SubmitDailyReportMailRequest request) {
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc gui mail nhat ky");
+        }
+        if (request == null || request.workDate() == null) {
+            throw new BusinessException("Ngay gui mail la bat buoc");
         }
         if (!StringUtils.hasText(request.googleAccessToken())) {
             throw new BusinessException("Can cap quyen Gmail de gui mail bang chinh tai khoan cua sinh vien");
         }
 
-        AppUser user = findUser(request.userId());
+        List<String> missingProfileFields = ProfileCompleteness.missingRequiredFields(user);
+        if (!missingProfileFields.isEmpty()) {
+            throw new BusinessException("Ho so sinh vien chua du thong tin bat buoc: " + String.join(", ", missingProfileFields));
+        }
         String tokenEmail = fetchGoogleEmail(request.googleAccessToken());
         if (!user.getEmail().equalsIgnoreCase(tokenEmail)) {
             throw new BusinessException("Token Gmail khong khop voi email dang nhap");
@@ -228,8 +242,13 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         int completedShiftCount = document.getCompletedShiftCount();
         String subject = user.getFullName() + ", được " + completedShiftCount
                 + " ca, ngày " + request.workDate().format(SUBJECT_DATE_FORMAT);
-        String attachmentName = fileName(user, document.getCompletedShiftCount()) + ".docx";
-        byte[] docxBytes = buildJournalDocx(document);
+        UploadedDocument uploadedDocument = decodeUploadedDocument(request);
+        String attachmentName = uploadedDocument != null
+                ? uploadedDocument.name()
+                : fileName(user, document.getCompletedShiftCount()) + ".docx";
+        byte[] docxBytes = uploadedDocument != null
+                ? uploadedDocument.bytes()
+                : buildJournalDocx(document);
         List<MailAttachment> attachments = new ArrayList<>();
         attachments.add(new MailAttachment(
                 attachmentName,
@@ -254,6 +273,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         try {
             sendMailWithGmailApi(user, request.googleAccessToken(), subject, buildMailBody(user, dailyEntry, schedules, attendances), attachments);
             emailLog.setStatus(EmailStatus.SENT);
+            markAttendanceImagesRetained(attendances, emailLog.getSentAt());
         } catch (Exception exception) {
             emailLog.setStatus(EmailStatus.FAILED);
             emailLog.setErrorMessage(exception.getMessage());
@@ -263,6 +283,45 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
         emailLogRepository.save(emailLog);
         return new MailSubmitResponse(reportMailTo, reportMailCc, subject, attachmentName);
+    }
+
+    @Override
+    @Transactional
+    public MailSubmitResponse confirmDailyMailSent(AppUser user, ConfirmDailyReportMailRequest request) {
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc xac nhan gui mail nhat ky");
+        }
+        if (request == null || request.workDate() == null) {
+            throw new BusinessException("Ngay xac nhan gui mail la bat buoc");
+        }
+
+        ReportDocument document = reportDocumentRepository.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+        ReportEntry dailyEntry = reportEntryRepository.findByDocumentAndWorkDate(document, request.workDate())
+                .orElseThrow(() -> new BusinessException("Ngay nay chua co noi dung nhat ky"));
+        if (dailyEntry.getPageCount() < dailyEntry.getRequiredPages()) {
+            throw new BusinessException("Nhat ky ngay nay chua du so trang yeu cau");
+        }
+
+        List<Attendance> attendances = attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(
+                user,
+                request.workDate()
+        );
+        Instant confirmedAt = Instant.now();
+        String subject = user.getFullName() + ", xac nhan da gui mail ngay " + request.workDate().format(SUBJECT_DATE_FORMAT);
+        EmailLog emailLog = EmailLog.builder()
+                .user(user)
+                .subject(subject)
+                .receivers(reportMailTo)
+                .ccReceivers(reportMailCc)
+                .workDate(request.workDate())
+                .sentAt(confirmedAt)
+                .attachmentCount(0)
+                .status(EmailStatus.MANUAL_CONFIRMED)
+                .build();
+        emailLogRepository.save(emailLog);
+        markAttendanceImagesRetained(attendances, confirmedAt);
+        return new MailSubmitResponse(reportMailTo, reportMailCc, subject, null);
     }
 
     private ReportDocument getOrCreateDocument(AppUser user) {
@@ -426,6 +485,34 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         return attachments;
     }
 
+    private void markAttendanceImagesRetained(List<Attendance> attendances, Instant sentAt) {
+        List<UUID> attendanceIds = attendances.stream()
+                .map(Attendance::getId)
+                .toList();
+        if (attendanceIds.isEmpty()) {
+            return;
+        }
+        Instant retentionUntil = sentAt.plus(Duration.ofDays(Math.max(1, retentionAfterMailDays)));
+        attendanceImageRepository.markRetentionUntilForAttendances(attendanceIds, retentionUntil);
+    }
+
+    private UploadedDocument decodeUploadedDocument(SubmitDailyReportMailRequest request) {
+        if (!StringUtils.hasText(request.uploadedDocumentName()) || !StringUtils.hasText(request.uploadedDocumentBase64())) {
+            return null;
+        }
+        try {
+            byte[] bytes = Base64.getDecoder().decode(request.uploadedDocumentBase64().trim());
+            if (bytes.length == 0) {
+                return null;
+            }
+            String normalizedName = request.uploadedDocumentName().trim();
+            String finalName = normalizedName.toLowerCase().endsWith(".docx") ? normalizedName : normalizedName + ".docx";
+            return new UploadedDocument(finalName, bytes);
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException("File Word tai len khong hop le");
+        }
+    }
+
     private Map<String, String> attendanceImagesForMail(Attendance attendance) {
         Map<String, String> images = new LinkedHashMap<>();
         String shiftName = sanitizeFilePart(attendance.getShift().getName());
@@ -582,11 +669,19 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     private void validateRequest(ReportEntryRequest request) {
-        if (request == null || request.userId() == null) {
-            throw new BusinessException("User id la bat buoc");
+        if (request == null) {
+            throw new BusinessException("Du lieu nhat ky la bat buoc");
         }
         if (request.workDate() == null || request.workDate().isAfter(LocalDate.now().plusDays(1))) {
             throw new BusinessException("Ngay viet nhat ky khong hop le");
+        }
+    }
+
+    private void assertCanReadEntry(AppUser currentUser, ReportEntry entry) {
+        boolean owner = entry.getDocument().getUser().getId().equals(currentUser.getId());
+        boolean privileged = currentUser.getRole() == UserRole.ADMIN;
+        if (!owner && !privileged) {
+            throw new ForbiddenException("Ban khong co quyen xem lich su nhat ky cua user khac");
         }
     }
 
@@ -598,5 +693,8 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     private record RemoteFile(byte[] bytes, String contentType) {
+    }
+
+    private record UploadedDocument(String name, byte[] bytes) {
     }
 }

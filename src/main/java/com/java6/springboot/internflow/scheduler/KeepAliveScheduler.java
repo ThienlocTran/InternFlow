@@ -11,15 +11,17 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * KeepAliveScheduler — giữ cho Render.com service luôn thức.
+ * KeepAliveScheduler - keeps the Render.com web service awake.
  *
- * Render.com (Free tier) sẽ spin-down service sau 15 phút không có traffic.
- * Scheduler này sẽ tự động gọi HTTP request đến chính nó mỗi 14 phút
- * để đảm bảo service không bao giờ bị ngủ.
+ * Render.com Free tier spins down a service after roughly 15 minutes without
+ * HTTP traffic. This scheduler calls the app liveness endpoint every 14 minutes.
+ * The endpoint used here must not touch the database, otherwise Neon compute can
+ * be woken up by keep-alive traffic.
  *
- * Cấu hình qua biến môi trường:
+ * Environment variables:
  *   APP_BASE_URL=https://your-app.onrender.com
- *   KEEP_ALIVE_ENABLED=true  (mặc định: true)
+ *   KEEP_ALIVE_ENABLED=true
+ *   KEEP_ALIVE_ENDPOINT=/api/health/live
  */
 @Slf4j
 @Component
@@ -36,11 +38,11 @@ public class KeepAliveScheduler {
     @Value("${app.keep-alive.enabled:true}")
     private boolean keepAliveEnabled;
 
-    @Value("${app.keep-alive.endpoint:/api/health}")
+    @Value("${app.keep-alive.endpoint:/api/health/live}")
     private String keepAliveEndpoint;
 
     public KeepAliveScheduler() {
-        // Timeout 10 giây để tránh block thread scheduler quá lâu
+        // Keep the scheduler thread from being blocked by a slow self-ping.
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10000); // 10 seconds
         factory.setReadTimeout(10000); // 10 seconds
@@ -48,36 +50,49 @@ public class KeepAliveScheduler {
     }
 
     /**
-     * Chạy mỗi 14 phút (840,000 ms).
-     * fixedDelay đảm bảo lần gọi tiếp theo bắt đầu SAU KHI lần trước hoàn tất,
-     * tránh tích lũy request nếu server chậm.
-     *
-     * initialDelay=60s: chờ app khởi động xong mới bắt đầu ping.
+     * fixedDelay starts the next ping only after the previous call completes.
      */
     @Scheduled(initialDelayString = "${app.keep-alive.initial-delay-ms:60000}",
                fixedDelayString  = "${app.keep-alive.interval-ms:840000}")
     public void pingToKeepAlive() {
         if (!keepAliveEnabled) {
-            log.debug("[KeepAlive] Scheduler bị tắt (app.keep-alive.enabled=false). Bỏ qua.");
+            log.debug("[KeepAlive] Scheduler disabled (app.keep-alive.enabled=false). Skipping.");
             return;
         }
 
         if (appBaseUrl == null || appBaseUrl.isBlank()) {
-            log.warn("[KeepAlive] APP_BASE_URL chưa được cấu hình. " +
-                     "Hãy set biến môi trường APP_BASE_URL trên Render.com.");
+            log.warn("[KeepAlive] APP_BASE_URL is not configured. Set APP_BASE_URL on Render.");
             return;
         }
 
-        String url = appBaseUrl.stripTrailing() + keepAliveEndpoint;
+        String endpoint = normalizeEndpoint(keepAliveEndpoint);
+        if (isDatabaseCheckingEndpoint(endpoint)) {
+            log.error("[KeepAlive] Refusing to ping {} because keep-alive must use a liveness endpoint with dbChecked=false.", endpoint);
+            return;
+        }
+
+        String url = appBaseUrl.stripTrailing() + endpoint;
         String now = LocalDateTime.now().format(FORMATTER);
 
         try {
-            log.info("[KeepAlive] {} — Đang ping: {}", now, url);
+            log.info("[KeepAlive] {} - Sending liveness ping to {}", now, url);
             String response = restTemplate.getForObject(url, String.class);
-            log.info("[KeepAlive] {} — Ping thành công. Response: {}", now, response);
+            log.info("Keep-alive ping sent to liveness endpoint; dbChecked=false; response={}", response);
         } catch (Exception e) {
-            // Không throw exception để không làm crash scheduler thread
-            log.error("[KeepAlive] {} — Ping thất bại tới {}: {}", now, url, e.getMessage());
+            // Do not rethrow; a failed ping should not crash the scheduler thread.
+            log.error("[KeepAlive] {} - Ping failed to {}: {}", now, url, e.getMessage());
         }
+    }
+
+    private String normalizeEndpoint(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) {
+            return "/api/health/live";
+        }
+        return endpoint.startsWith("/") ? endpoint : "/" + endpoint;
+    }
+
+    private boolean isDatabaseCheckingEndpoint(String endpoint) {
+        return "/actuator/health".equalsIgnoreCase(endpoint)
+                || "/api/health/ready".equalsIgnoreCase(endpoint);
     }
 }

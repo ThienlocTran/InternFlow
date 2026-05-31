@@ -2,7 +2,9 @@ package com.java6.springboot.internflow.handle;
 
 import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.exception.BusinessException;
+import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
+import com.java6.springboot.internflow.exception.UnauthorizedException;
 import java.time.Instant;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -31,6 +33,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException exception) {
         return ResponseEntity.badRequest()
+                .body(new ApiResponse<>(false, exception.getMessage(), null, Instant.now()));
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnauthorized(UnauthorizedException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new ApiResponse<>(false, exception.getMessage(), null, Instant.now()));
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiResponse<Void>> handleForbidden(ForbiddenException exception) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(new ApiResponse<>(false, exception.getMessage(), null, Instant.now()));
     }
 
