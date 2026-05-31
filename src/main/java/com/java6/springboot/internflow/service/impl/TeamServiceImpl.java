@@ -21,6 +21,7 @@ import com.java6.springboot.internflow.entity.TeamMember;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
+import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
@@ -172,6 +173,7 @@ public class TeamServiceImpl implements TeamService {
         // Set default date range if not provided (last 30 days)
         LocalDate effectiveEndDate = endDate != null ? endDate : LocalDate.now();
         LocalDate effectiveStartDate = startDate != null ? startDate : effectiveEndDate.minusDays(30);
+        assertLeaderCanInspectMember(leader, member, effectiveStartDate, effectiveEndDate);
 
         // Get schedule registrations
         List<ScheduleRegistration> scheduleRegistrations = scheduleRegistrationRepository
@@ -239,13 +241,14 @@ public class TeamServiceImpl implements TeamService {
         // Get member info
         AppUser member = findUser(memberId);
         LocalDate targetDate = date != null ? date : LocalDate.now();
+        assertLeaderCanInspectMember(leader, member, targetDate, targetDate);
 
         // Get schedule registrations for the date
         List<ScheduleRegistration> scheduleRegistrations = scheduleRegistrationRepository
                 .findByUserAndScheduleDateAndStatus(member, targetDate, ScheduleRegistrationStatus.REGISTERED);
 
         // Reuse existing AttendanceService to get full attendance with images
-        List<AttendanceResponse> attendances = attendanceService.getUserAttendances(memberId, targetDate);
+        List<AttendanceResponse> attendances = attendanceService.getUserAttendances(member, targetDate);
 
         // Reuse existing ReportJournalService to get report entries
         List<DailyReportEntryResponse> reportEntries = reportJournalService.getEntriesByDate(targetDate)
@@ -270,5 +273,35 @@ public class TeamServiceImpl implements TeamService {
     private AppUser findUser(UUID id) {
         return appUserRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
+    }
+
+    private void assertLeaderCanInspectMember(AppUser leader, AppUser member, LocalDate startDate, LocalDate endDate) {
+        if (leader.getId().equals(member.getId())) {
+            return;
+        }
+
+        List<Shift> leaderShifts = scheduleRegistrationRepository
+                .findByUserAndScheduleDateBetweenOrderByScheduleDateAscShift_StartTimeAsc(leader, startDate, endDate)
+                .stream()
+                .filter(registration -> registration.getStatus() == ScheduleRegistrationStatus.REGISTERED)
+                .map(ScheduleRegistration::getShift)
+                .distinct()
+                .toList();
+        if (leaderShifts.isEmpty()) {
+            throw new ForbiddenException("Nhom truong chi duoc xem sinh vien trong ca minh da dang ky");
+        }
+
+        boolean hasSharedShift = !scheduleRegistrationRepository
+                .findByUserAndShiftInAndScheduleDateBetweenAndStatus(
+                        member,
+                        leaderShifts,
+                        startDate,
+                        endDate,
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .isEmpty();
+        if (!hasSharedShift) {
+            throw new ForbiddenException("Nhom truong chi duoc xem sinh vien trung ca voi minh");
+        }
     }
 }

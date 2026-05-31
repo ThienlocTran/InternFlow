@@ -11,6 +11,7 @@ import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
+import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
@@ -43,9 +44,11 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     @Override
     @Transactional
-    public List<ScheduleRegistrationResponse> register(ScheduleRegistrationRequest request) {
+    public List<ScheduleRegistrationResponse> register(AppUser user, ScheduleRegistrationRequest request) {
         validateRequest(request);
-        AppUser user = findUser(request.userId());
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc dang ky ca");
+        }
         RolePolicy policy = rolePolicyRepository.findByRole(user.getRole())
                 .orElseThrow(() -> new BusinessException("Chua cau hinh quota cho role " + user.getRole()));
         if (policy.getMaxShiftsPerDay() <= 0) {
@@ -54,7 +57,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
         List<Shift> shifts = request.shiftIds().stream()
                 .map(this::findShift)
-                .sorted(Comparator.comparing(Shift::getStartTime))
+                .sorted(Comparator.comparingInt(this::shiftOrder).thenComparing(Shift::getStartTime))
                 .toList();
 
         long existingCount = scheduleRegistrationRepository.countByUserAndScheduleDateAndStatus(
@@ -78,7 +81,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
             throw new BusinessException("Vuot quota tich luy den het tuan nay (" + cumulativeLimit + " ca)");
         }
         if (!isAdjacent(shifts)) {
-            throw new BusinessException("Sinh vien nen chon cac ca lien ke nhau trong cung ngay");
+            throw new BusinessException("Cac ca trong ngay phai lien ke theo thu tu ca");
         }
 
         return shifts.stream()
@@ -89,8 +92,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     @Override
     @Transactional(readOnly = true)
-    public List<ScheduleRegistrationResponse> getUserSchedule(UUID userId, LocalDate startDate, LocalDate endDate) {
-        AppUser user = findUser(userId);
+    public List<ScheduleRegistrationResponse> getUserSchedule(AppUser user, LocalDate startDate, LocalDate endDate) {
         LocalDate start = startDate == null ? LocalDate.now().with(java.time.DayOfWeek.MONDAY) : startDate;
         LocalDate end = endDate == null ? start.plusDays(6) : endDate;
         return scheduleRegistrationRepository.findByUserAndScheduleDateBetweenOrderByScheduleDateAscShift_StartTimeAsc(user, start, end)
@@ -106,7 +108,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         LocalDate end = endDate == null ? start.plusDays(6) : endDate;
         List<Shift> shifts = shiftRepository.findAll()
                 .stream()
-                .sorted(Comparator.comparing(Shift::getStartTime))
+                .sorted(Comparator.comparingInt(this::shiftOrder).thenComparing(Shift::getStartTime))
                 .toList();
 
         return start.datesUntil(end.plusDays(1))
@@ -131,12 +133,15 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     @Override
     @Transactional
-    public ScheduleRegistrationResponse cancel(UUID registrationId) {
+    public ScheduleRegistrationResponse cancel(AppUser currentUser, UUID registrationId) {
         if (registrationId == null) {
             throw new BusinessException("Registration id la bat buoc");
         }
         ScheduleRegistration registration = scheduleRegistrationRepository.findById(registrationId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay lich dang ky"));
+        if (!registration.getUser().getId().equals(currentUser.getId())) {
+            throw new ForbiddenException("Ban khong co quyen roi ca cua user khac");
+        }
         if (registration.getScheduleDate().isBefore(LocalDate.now())) {
             throw new BusinessException("Ca da qua ngay nen khong the roi ca");
         }
@@ -232,21 +237,12 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     private int shiftOrder(Shift shift) {
-        String code = shift.getCode() == null ? "" : shift.getCode();
-        int underscore = code.lastIndexOf('_');
-        if (underscore >= 0 && underscore + 1 < code.length()) {
-            try {
-                return Integer.parseInt(code.substring(underscore + 1));
-            } catch (NumberFormatException ignored) {
-                return 999;
-            }
-        }
-        return 999;
+        return shift.getShiftOrder();
     }
 
     private void validateRequest(ScheduleRegistrationRequest request) {
-        if (request == null || request.userId() == null) {
-            throw new BusinessException("User id la bat buoc");
+        if (request == null) {
+            throw new BusinessException("Du lieu dang ky ca la bat buoc");
         }
         if (request.scheduleDate() == null) {
             throw new BusinessException("Ngay dang ky la bat buoc");
@@ -265,8 +261,12 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     private Shift findShift(UUID id) {
-        return shiftRepository.findById(id)
+        Shift shift = shiftRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+        if (!shift.isActive()) {
+            throw new BusinessException("Ca nay dang tam tat, khong the dang ky");
+        }
+        return shift;
     }
 
     private LocalDate resolveQuotaStartDate(AppUser user, LocalDate scheduleDate) {

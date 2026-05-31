@@ -11,7 +11,9 @@ import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
+import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
+import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
@@ -23,6 +25,8 @@ import com.java6.springboot.internflow.service.AttendanceService;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +38,9 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class AttendanceServiceImpl implements AttendanceService {
 
+    private static final String CLOUDINARY_PROVIDER = "CLOUDINARY";
+    private static final String THUMBNAIL_TRANSFORMATION = "c_limit,w_400,q_auto,f_auto";
+
     private final AttendanceRepository attendanceRepository;
     private final AppUserRepository appUserRepository;
     private final ShiftRepository shiftRepository;
@@ -43,9 +50,11 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional
-    public AttendanceResponse checkin(CheckinRequest request) {
+    public AttendanceResponse checkin(AppUser user, CheckinRequest request) {
         validateCheckinRequest(request);
-        AppUser user = findUser(request.userId());
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc diem danh");
+        }
         Shift shift = findShift(request.shiftId());
         LocalDate attendanceDate = request.attendanceDate() == null ? LocalDate.now() : request.attendanceDate();
 
@@ -93,7 +102,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional
-    public AttendanceResponse checkout(UUID attendanceId, CheckoutRequest request) {
+    public AttendanceResponse checkout(AppUser currentUser, UUID attendanceId, CheckoutRequest request) {
         if (attendanceId == null) {
             throw new BusinessException("Attendance id la bat buoc");
         }
@@ -103,6 +112,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         Attendance attendance = attendanceRepository.findById(attendanceId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+        assertOwner(currentUser, attendance);
         if (attendance.getStatus() != AttendanceStatus.CHECKED_IN) {
             throw new BusinessException("Chi duoc checkout khi da checkin");
         }
@@ -122,7 +132,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional
-    public AttendanceResponse saveCheckoutDraft(UUID attendanceId, CheckoutRequest request) {
+    public AttendanceResponse saveCheckoutDraft(AppUser currentUser, UUID attendanceId, CheckoutRequest request) {
         if (attendanceId == null) {
             throw new BusinessException("Attendance id la bat buoc");
         }
@@ -132,6 +142,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         Attendance attendance = attendanceRepository.findById(attendanceId)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+        assertOwner(currentUser, attendance);
         if (attendance.getStatus() != AttendanceStatus.CHECKED_IN) {
             throw new BusinessException("Chi duoc luu anh tam khi dang trong ca");
         }
@@ -148,11 +159,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AttendanceResponse> getUserAttendances(UUID userId, LocalDate date) {
-        if (userId == null) {
-            throw new BusinessException("User id la bat buoc");
-        }
-        AppUser user = findUser(userId);
+    public List<AttendanceResponse> getUserAttendances(AppUser user, LocalDate date) {
         LocalDate attendanceDate = date == null ? LocalDate.now() : date;
         return attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(user, attendanceDate)
                 .stream()
@@ -168,9 +175,10 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional
-    public AttendanceImageResponse addImage(UUID attendanceId, AttendanceImageRequest request) {
+    public AttendanceImageResponse addImage(AppUser currentUser, UUID attendanceId, AttendanceImageRequest request) {
         validateImageRequest(attendanceId, request);
         Attendance attendance = findAttendance(attendanceId);
+        assertOwner(currentUser, attendance);
 
         AttendanceImage image = attendanceImageRepository
                 .findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
@@ -186,6 +194,14 @@ public class AttendanceServiceImpl implements AttendanceService {
                         .expectedTime(request.expectedTime())
                         .build());
         image.setImageUrl(request.imageUrl().trim());
+        image.setStorageProvider(storageProvider(request));
+        image.setPublicId(publicId(request));
+        image.setThumbnailUrl(thumbnailUrl(request));
+        image.setFileSizeBytes(request.fileSizeBytes());
+        image.setMimeType(trimToNull(request.mimeType()));
+        image.setWidth(request.width());
+        image.setHeight(request.height());
+        image.setSourceReference(trimToNull(request.sourceReference()));
         image.setDisplayOrder(request.displayOrder() == null ? 0 : request.displayOrder());
         image.setNote(trimToNull(request.note()));
 
@@ -194,11 +210,11 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AttendanceImageResponse> getImages(UUID attendanceId) {
+    public List<AttendanceImageResponse> getImages(AppUser currentUser, UUID attendanceId) {
         if (attendanceId == null) {
             throw new BusinessException("Attendance id la bat buoc");
         }
-        findAttendance(attendanceId);
+        assertOwner(currentUser, findAttendance(attendanceId));
         return attendanceImageRepository.findByAttendanceIdOrderByExpectedTimeAscDisplayOrderAsc(attendanceId)
                 .stream()
                 .map(AttendanceImageResponse::from)
@@ -208,9 +224,6 @@ public class AttendanceServiceImpl implements AttendanceService {
     private void validateCheckinRequest(CheckinRequest request) {
         if (request == null) {
             throw new BusinessException("Du lieu checkin la bat buoc");
-        }
-        if (request.userId() == null) {
-            throw new BusinessException("User id la bat buoc");
         }
         if (request.shiftId() == null) {
             throw new BusinessException("Shift id la bat buoc");
@@ -230,9 +243,19 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
     }
 
+    private void assertOwner(AppUser currentUser, Attendance attendance) {
+        if (!attendance.getUser().getId().equals(currentUser.getId())) {
+            throw new ForbiddenException("Ban khong co quyen thao tac attendance cua user khac");
+        }
+    }
+
     private Shift findShift(UUID id) {
-        return shiftRepository.findById(id)
+        Shift shift = shiftRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+        if (!shift.isActive()) {
+            throw new BusinessException("Ca nay dang tam tat, khong the checkin");
+        }
+        return shift;
     }
 
     private String trimToNull(String value) {
@@ -246,6 +269,68 @@ public class AttendanceServiceImpl implements AttendanceService {
      */
     private String optionalImageValue(String value) {
         return StringUtils.hasText(value) ? value.trim() : "";
+    }
+
+    private String storageProvider(AttendanceImageRequest request) {
+        if (StringUtils.hasText(request.storageProvider())) {
+            return request.storageProvider().trim();
+        }
+        return request.imageUrl().contains("cloudinary.com") ? CLOUDINARY_PROVIDER : null;
+    }
+
+    private String publicId(AttendanceImageRequest request) {
+        if (StringUtils.hasText(request.publicId())) {
+            return request.publicId().trim();
+        }
+        return parseCloudinaryPublicId(request.imageUrl());
+    }
+
+    private String thumbnailUrl(AttendanceImageRequest request) {
+        if (StringUtils.hasText(request.thumbnailUrl())) {
+            return request.thumbnailUrl().trim();
+        }
+        String imageUrl = request.imageUrl().trim();
+        if (imageUrl.contains("/image/upload/")) {
+            return imageUrl.replace("/image/upload/", "/image/upload/" + THUMBNAIL_TRANSFORMATION + "/");
+        }
+        return imageUrl;
+    }
+
+    private String parseCloudinaryPublicId(String imageUrl) {
+        if (!StringUtils.hasText(imageUrl) || !imageUrl.contains("/image/upload/")) {
+            return null;
+        }
+        try {
+            String path = imageUrl.substring(imageUrl.indexOf("/image/upload/") + "/image/upload/".length());
+            String[] parts = path.split("/");
+            int startIndex = 0;
+            for (int index = 0; index < parts.length; index++) {
+                if (parts[index].matches("v\\d+")) {
+                    startIndex = index + 1;
+                    break;
+                }
+                if (parts[index].contains(",")) {
+                    startIndex = index + 1;
+                }
+            }
+            if (startIndex >= parts.length) {
+                return null;
+            }
+            String publicPath = String.join("/", java.util.Arrays.copyOfRange(parts, startIndex, parts.length));
+            int queryIndex = publicPath.indexOf('?');
+            if (queryIndex >= 0) {
+                publicPath = publicPath.substring(0, queryIndex);
+            }
+            int extensionIndex = publicPath.lastIndexOf('.');
+            if (extensionIndex > 0) {
+                publicPath = publicPath.substring(0, extensionIndex);
+            }
+            return StringUtils.hasText(publicPath)
+                    ? URLDecoder.decode(publicPath, StandardCharsets.UTF_8)
+                    : null;
+        } catch (Exception exception) {
+            return null;
+        }
     }
 
     private void validateImageRequest(UUID attendanceId, AttendanceImageRequest request) {

@@ -74,7 +74,7 @@
 
 ### 1. Test Health Check
 ```bash
-curl https://your-app-name.onrender.com/actuator/health
+curl https://your-app-name.onrender.com/api/health/live
 ```
 
 Kết quả mong đợi:

@@ -5,21 +5,22 @@ import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.request.AttendanceImageRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
+import com.java6.springboot.internflow.entity.AppUser;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 public interface AttendanceService {
 
-    AttendanceResponse checkin(CheckinRequest request);
+    AttendanceResponse checkin(AppUser currentUser, CheckinRequest request);
 
-    AttendanceResponse checkout(UUID attendanceId, CheckoutRequest request);
+    AttendanceResponse checkout(AppUser currentUser, UUID attendanceId, CheckoutRequest request);
 
-    AttendanceResponse saveCheckoutDraft(UUID attendanceId, CheckoutRequest request);
+    AttendanceResponse saveCheckoutDraft(AppUser currentUser, UUID attendanceId, CheckoutRequest request);
 
-    List<AttendanceResponse> getUserAttendances(UUID userId, LocalDate date);
+    List<AttendanceResponse> getUserAttendances(AppUser user, LocalDate date);
 
-    AttendanceImageResponse addImage(UUID attendanceId, AttendanceImageRequest request);
+    AttendanceImageResponse addImage(AppUser currentUser, UUID attendanceId, AttendanceImageRequest request);
 
-    List<AttendanceImageResponse> getImages(UUID attendanceId);
+    List<AttendanceImageResponse> getImages(AppUser currentUser, UUID attendanceId);
 }

@@ -183,7 +183,7 @@ VALUE: xuandat210425cty@gmail.com
 2. Render sẽ tự động **redeploy** service
 3. Đợi 3-5 phút để deploy xong
 4. Kiểm tra **Logs** để đảm bảo không có lỗi
-5. Test API: `https://your-app-name.onrender.com/actuator/health`
+5. Test API: `https://your-app-name.onrender.com/api/health/live`
 
 ---
 

@@ -35,9 +35,11 @@ services:
         sync: false
       - key: JAVA_TOOL_OPTIONS
         value: -Xmx512m -Xms256m
-      # Keep-Alive: tự ping để không bị Render spin-down
+      # Keep-Alive: ping liveness only; this endpoint does not touch Neon/PostgreSQL
       # Thay "internflow-backend" bằng tên service thật trên Render của bạn
       - key: APP_BASE_URL
         value: https://internflow-e1to.onrender.com
       - key: KEEP_ALIVE_ENABLED
         value: true
+      - key: KEEP_ALIVE_ENDPOINT
+        value: /api/health/live
