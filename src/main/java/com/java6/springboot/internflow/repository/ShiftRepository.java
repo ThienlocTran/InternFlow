@@ -13,4 +13,6 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
     boolean existsByCode(String code);
 
     List<Shift> findByActiveTrueOrderByShiftOrderAscStartTimeAsc();
+
+    List<Shift> findAllByOrderByShiftOrderAscStartTimeAsc();
 }

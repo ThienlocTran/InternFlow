@@ -250,8 +250,12 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     private Shift findShift(UUID id) {
-        return shiftRepository.findById(id)
+        Shift shift = shiftRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+        if (!shift.isActive()) {
+            throw new BusinessException("Ca nay dang tam tat, khong the checkin");
+        }
+        return shift;
     }
 
     private String trimToNull(String value) {

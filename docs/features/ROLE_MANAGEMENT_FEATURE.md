@@ -73,7 +73,7 @@ Body: { "role": "INTERN" }
 - `AdminStudentController.java` - Controller với endpoint
 
 ### Documentation
-- `ADMIN_ROLE_MANAGEMENT_API.md` - Chi tiết API đầy đủ
+- `../api/ADMIN_ROLE_MANAGEMENT_API.md` - Chi tiết API đầy đủ
 - `db/migrations/2026-05-18-add-role-management-notes.sql` - SQL notes
 
 ## Testing

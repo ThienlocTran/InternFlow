@@ -56,10 +56,10 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedShifts() {
-        createShiftIfMissing("SHIFT_1", "Ca 1", LocalTime.of(8, 0), LocalTime.of(11, 30));
-        createShiftIfMissing("SHIFT_2", "Ca 2", LocalTime.of(13, 30), LocalTime.of(17, 0));
-        createShiftIfMissing("SHIFT_3", "Ca 3", LocalTime.of(17, 0), LocalTime.of(19, 40));
-        createShiftIfMissing("SHIFT_4", "Ca 4", LocalTime.of(19, 40), LocalTime.of(21, 40));
+        createShiftIfMissing("SHIFT_1", "Ca 1", LocalTime.of(8, 0), LocalTime.of(11, 30), 1, "Ban ngay", false);
+        createShiftIfMissing("SHIFT_2", "Ca 2", LocalTime.of(13, 30), LocalTime.of(17, 0), 2, "Ban ngay", false);
+        createShiftIfMissing("SHIFT_3", "Ca 3", LocalTime.of(17, 0), LocalTime.of(19, 40), 3, "Buoi toi", true);
+        createShiftIfMissing("SHIFT_4", "Ca 4", LocalTime.of(19, 40), LocalTime.of(21, 40), 4, "Buoi toi", true);
     }
 
     private void seedRolePolicies() {
@@ -69,7 +69,15 @@ public class DataInitializer implements CommandLineRunner {
         createPolicyIfMissing(UserRole.ADMIN, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
-    private void createShiftIfMissing(String code, String name, LocalTime startTime, LocalTime endTime) {
+    private void createShiftIfMissing(
+            String code,
+            String name,
+            LocalTime startTime,
+            LocalTime endTime,
+            int shiftOrder,
+            String displayGroup,
+            boolean nightShift
+    ) {
         var existingShift = shiftRepository.findByCode(code);
         if (existingShift.isPresent()) {
             if (overwriteSystemData) {
@@ -77,6 +85,9 @@ public class DataInitializer implements CommandLineRunner {
                 shift.setName(name);
                 shift.setStartTime(startTime);
                 shift.setEndTime(endTime);
+                shift.setShiftOrder(shiftOrder);
+                shift.setDisplayGroup(displayGroup);
+                shift.setNightShift(nightShift);
                 shiftRepository.save(shift);
             }
             return;
@@ -88,6 +99,9 @@ public class DataInitializer implements CommandLineRunner {
                 .endTime(endTime)
                 .category(ShiftCategory.COMPANY)
                 .maxParticipants(9)
+                .shiftOrder(shiftOrder)
+                .displayGroup(displayGroup)
+                .nightShift(nightShift)
                 .build());
     }
 

@@ -55,6 +55,13 @@ public class Shift {
     @Column(name = "shift_order", nullable = false, columnDefinition = "integer default 0")
     private int shiftOrder = 0;
 
+    @Column(name = "display_group", length = 80)
+    private String displayGroup;
+
+    @Builder.Default
+    @Column(name = "is_night_shift", nullable = false, columnDefinition = "boolean default false")
+    private boolean nightShift = false;
+
     @Builder.Default
     @Column(nullable = false)
     private boolean active = true;

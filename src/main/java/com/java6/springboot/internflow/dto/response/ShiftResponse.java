@@ -14,6 +14,8 @@ public record ShiftResponse(
         ShiftCategory category,
         int maxParticipants,
         int shiftOrder,
+        String displayGroup,
+        boolean isNightShift,
         boolean active
 ) {
 
@@ -27,6 +29,8 @@ public record ShiftResponse(
                 shift.getCategory(),
                 shift.getMaxParticipants(),
                 shift.getShiftOrder(),
+                shift.getDisplayGroup(),
+                shift.isNightShift(),
                 shift.isActive()
         );
     }

@@ -273,8 +273,12 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     }
 
     private Shift findShift(UUID id) {
-        return shiftRepository.findById(id)
+        Shift shift = shiftRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+        if (!shift.isActive()) {
+            throw new BusinessException("Ca nay dang tam tat, khong the dang ky");
+        }
+        return shift;
     }
 
     private LocalDate resolveQuotaStartDate(AppUser user, LocalDate scheduleDate) {

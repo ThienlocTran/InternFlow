@@ -38,7 +38,7 @@ public class InternshipProgressCalculator {
         }
 
         long completedNightShifts = completedAttendances.stream()
-                .filter(attendance -> isNightShift(attendance.getShift().getCode()))
+                .filter(attendance -> attendance.getShift().isNightShift())
                 .count();
         int nightBonus = bonusFromThreshold(
                 completedNightShifts,
@@ -58,9 +58,5 @@ public class InternshipProgressCalculator {
             return 0;
         }
         return Math.toIntExact((baseCount / threshold) * amount);
-    }
-
-    private boolean isNightShift(String shiftCode) {
-        return "SHIFT_3".equals(shiftCode) || "SHIFT_4".equals(shiftCode);
     }
 }

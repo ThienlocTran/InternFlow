@@ -1,12 +1,17 @@
 -- R2-S1-DB-01: Configurable compliance foundation
 -- Safe for an existing PostgreSQL database with sample data.
--- Run manually with psql:
+-- Run on local/staging with psql after backup/snapshot:
 --   \i db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql
+-- Idempotent: safe to rerun; keeps existing rows.
 
 create extension if not exists pgcrypto;
 
 alter table if exists shifts
     add column if not exists shift_order integer;
+
+alter table if exists shifts
+    add column if not exists display_group varchar(80),
+    add column if not exists is_night_shift boolean default false;
 
 update shifts
 set shift_order = case code
@@ -26,8 +31,22 @@ update shifts
 set shift_order = 0
 where shift_order is null;
 
+update shifts
+set display_group = case
+    when code in ('SHIFT_3', 'SHIFT_4') then 'Buoi toi'
+    when category = 'HOME_REPORT' then 'Bao cao tai nha'
+    else 'Ban ngay'
+end
+where display_group is null;
+
+update shifts
+set is_night_shift = code in ('SHIFT_3', 'SHIFT_4')
+where is_night_shift is null;
+
 alter table if exists shifts
-    alter column shift_order set not null;
+    alter column shift_order set not null,
+    alter column is_night_shift set not null,
+    alter column is_night_shift set default false;
 
 create index if not exists idx_shifts_shift_order
     on shifts (shift_order);
@@ -126,6 +145,44 @@ create table if not exists photo_requirements (
     constraint ck_photo_requirements_phase check (phase in ('CHECKIN', 'DURING_SHIFT', 'CHECKOUT'))
 );
 
+alter table if exists photo_requirements
+    add column if not exists role varchar(30),
+    add column if not exists shift_id uuid references shifts(id) on delete cascade,
+    add column if not exists image_type varchar(30),
+    add column if not exists phase varchar(30),
+    add column if not exists required_count integer default 1,
+    add column if not exists interval_minutes integer,
+    add column if not exists active boolean default true,
+    add column if not exists note varchar(500),
+    add column if not exists created_at timestamp default now(),
+    add column if not exists updated_at timestamp default now();
+
+update photo_requirements
+set required_count = 1
+where required_count is null;
+
+update photo_requirements
+set active = true
+where active is null;
+
+update photo_requirements
+set created_at = now()
+where created_at is null;
+
+update photo_requirements
+set updated_at = now()
+where updated_at is null;
+
+alter table if exists photo_requirements
+    alter column required_count set not null,
+    alter column required_count set default 1,
+    alter column active set not null,
+    alter column active set default true,
+    alter column created_at set not null,
+    alter column created_at set default now(),
+    alter column updated_at set not null,
+    alter column updated_at set default now();
+
 create unique index if not exists uk_photo_requirement_scope
     on photo_requirements (
         role,
@@ -158,6 +215,8 @@ values
 on conflict do nothing;
 
 comment on column shifts.shift_order is 'Thu tu hien thi/xu ly ca, dung thay cho parse code SHIFT_n.';
+comment on column shifts.display_group is 'Nhom hien thi cua ca, vi du Ban ngay/Buoi toi/Bao cao tai nha.';
+comment on column shifts.is_night_shift is 'Danh dau ca toi de tinh rule/bonus, khong phu thuoc code ca.';
 comment on table photo_requirements is 'Cau hinh yeu cau anh diem danh theo role/ca/loai anh/giai doan.';
 comment on column photo_requirements.shift_id is 'Null = default cho moi ca; co gia tri = override cho ca cu the.';
 comment on column photo_requirements.interval_minutes is 'Khoang lap anh giua ca; null cho moc checkin/checkout co dinh.';
