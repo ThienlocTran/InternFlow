@@ -1,5 +1,6 @@
 package com.java6.springboot.internflow.service.impl;
 
+import com.java6.springboot.internflow.config.AdminAccessProperties;
 import com.java6.springboot.internflow.dto.request.UserProfileRequest;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
@@ -21,14 +22,9 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
-    private static final Set<String> ADMIN_EMAILS = Set.of(
-            "tranthienloc.nina@gmail.com",
-            "tranthienloc21102005@gmail.com",
-            "daonguyenquocviet9190@gmail.com"
-    );
-
     private final AppUserRepository appUserRepository;
     private final InternshipCohortRepository internshipCohortRepository;
+    private final AdminAccessProperties adminAccessProperties;
 
     @Override
     @Transactional
@@ -79,7 +75,7 @@ public class UserServiceImpl implements UserService {
         user.setStudentClass(trimToNull(request.studentClass()));
         user.setSchool(trimToNull(request.school()));
         user.setPhone(trimToNull(request.phone()));
-        if (ADMIN_EMAILS.contains(normalizedEmail)) {
+        if (adminAccessProperties.isAdminEmail(normalizedEmail)) {
             user.setRole(UserRole.ADMIN);
         }
         if (user.getRole() == UserRole.INTERN && user.getCohort() == null) {
@@ -116,24 +112,20 @@ public class UserServiceImpl implements UserService {
         }
 
         AppUser user = findUser(userId);
-        
-        // Prevent changing role of admin users
+
         if (user.getRole() == UserRole.ADMIN) {
             throw new BusinessException("Khong the thay doi role cua admin");
         }
-        
-        // Prevent setting role to ADMIN through this endpoint
+
         if (newRole == UserRole.ADMIN) {
             throw new BusinessException("Khong the set role thanh ADMIN qua endpoint nay");
         }
 
-        // Validate role transition
         UserRole currentRole = user.getRole();
         if (currentRole == newRole) {
             throw new BusinessException("User da co role nay roi");
         }
 
-        // Only allow INTERN <-> TEAM_LEADER transitions (and MANAGER if needed)
         if (!isValidRoleTransition(currentRole, newRole)) {
             throw new BusinessException("Khong the chuyen tu " + currentRole + " sang " + newRole);
         }
@@ -143,7 +135,6 @@ public class UserServiceImpl implements UserService {
     }
 
     private boolean isValidRoleTransition(UserRole from, UserRole to) {
-        // Allow transitions between INTERN, TEAM_LEADER, and MANAGER
         Set<UserRole> allowedRoles = Set.of(UserRole.INTERN, UserRole.TEAM_LEADER, UserRole.MANAGER);
         return allowedRoles.contains(from) && allowedRoles.contains(to);
     }
@@ -167,7 +158,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private UserRole resolveRole(UserProfileRequest request) {
-        if (ADMIN_EMAILS.contains(normalizeEmail(request.email()))) {
+        if (adminAccessProperties.isAdminEmail(request.email())) {
             return UserRole.ADMIN;
         }
         return request.role() == null ? UserRole.INTERN : request.role();

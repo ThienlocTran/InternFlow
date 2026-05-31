@@ -1,5 +1,6 @@
 package com.java6.springboot.internflow.controller;
 
+import com.java6.springboot.internflow.config.AdminAccessProperties;
 import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.request.GoogleLoginRequest;
 import com.java6.springboot.internflow.dto.response.UserResponse;
@@ -15,10 +16,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,13 +32,9 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private static final Set<String> ADMIN_EMAILS = Set.of(
-            "tranthienloc.nina@gmail.com",
-            "tranthienloc21102005@gmail.com"
-    );
-
     private final AppUserRepository appUserRepository;
     private final InternshipCohortRepository internshipCohortRepository;
+    private final AdminAccessProperties adminAccessProperties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -75,7 +71,7 @@ public class AuthController {
             AppUser newUser = AppUser.builder()
                     .email(loginEmail)
                     .fullName(displayName)
-                    .role(ADMIN_EMAILS.contains(loginEmail) ? UserRole.ADMIN : UserRole.INTERN)
+                    .role(adminAccessProperties.isAdminEmail(loginEmail) ? UserRole.ADMIN : UserRole.INTERN)
                     .active(true)
                     .build();
             if (newUser.getRole() == UserRole.INTERN) {
@@ -84,6 +80,12 @@ public class AuthController {
             }
             return appUserRepository.save(newUser);
         });
+
+        if (adminAccessProperties.isAdminEmail(user.getEmail()) && user.getRole() != UserRole.ADMIN) {
+            user.setRole(UserRole.ADMIN);
+            user.setActive(true);
+            user = appUserRepository.save(user);
+        }
 
         return ApiResponse.ok("Dang nhap Google thanh cong", UserResponse.from(user));
     }
