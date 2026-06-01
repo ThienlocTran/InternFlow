@@ -6,6 +6,8 @@ import java.util.UUID;
 public record SubmitDailyReportMailRequest(
         UUID userId,
         LocalDate workDate,
-        String googleAccessToken
+        String googleAccessToken,
+        String uploadedDocumentName,
+        String uploadedDocumentBase64
 ) {
 }

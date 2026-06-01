@@ -63,6 +63,15 @@ MAIL_USERNAME
 MAIL_PASSWORD
 INTERNFLOW_MAIL_TO
 INTERNFLOW_MAIL_CC
+
+# Image cleanup (safe defaults)
+IMAGE_CLEANUP_ENABLED=false
+IMAGE_CLEANUP_DRY_RUN=true
+IMAGE_RETENTION_AFTER_MAIL_DAYS=30
+IMAGE_DRAFT_RETENTION_DAYS=7
+IMAGE_COHORT_END_RETENTION_DAYS=30
+IMAGE_CLEANUP_BATCH_SIZE=50
+IMAGE_CLEANUP_INTERVAL_MS=86400000
 ```
 
 Chi tiết xem file `.env.example`
@@ -148,3 +157,29 @@ Nếu gặp vấn đề:
 ---
 
 **Chúc bạn deploy thành công! 🎉**
+
+## Health endpoints and Render keep-alive
+
+Use `GET /api/health/live` for Render health checks and keep-alive pings. This endpoint returns a lightweight liveness response with `dbChecked=false` and does not call repositories, services, `DataSource`, or PostgreSQL.
+
+`GET /api/ping` is also lightweight and remains available for compatibility.
+
+Use `GET /api/health/ready` only for deploy/debug readiness checks. It opens a database connection and validates PostgreSQL, so it can wake Neon compute and must not be used for automatic keep-alive traffic.
+
+The keep-alive scheduler defaults to `KEEP_ALIVE_ENDPOINT=/api/health/live`. Do not configure it to `/api/health/ready` or `/actuator/health`; if Spring Boot Actuator is added later, its default health endpoint may include `DataSourceHealthIndicator` and check the database.
+
+## Image storage and cleanup safety
+
+Attendance images are compressed before upload on the frontend, stored in Cloudinary for MVP/short-term use, and tracked in the database with metadata: `imageUrl`, `thumbnailUrl`, `publicId`, `storageProvider`, `fileSizeBytes`, `mimeType`, `width`, `height`, `retentionUntil`, `deletedAt`, and `deleteStatus`.
+
+Dashboard/list/checklist screens use thumbnails by default. Full images should load only when the user opens/clicks a preview.
+
+Retention defaults:
+
+- Uploaded attendance images get `retentionUntil` only after Gmail API send succeeds or the student manually confirms mail was sent.
+- After mail send/confirmation: keep images for `IMAGE_RETENTION_AFTER_MAIL_DAYS` days, default `30`.
+- Cohort cleanup eligibility: `cohort.end_date + IMAGE_COHORT_END_RETENTION_DAYS`, default `30`.
+- Draft image retention is documented as `IMAGE_DRAFT_RETENTION_DAYS=7`, but automatic draft cleanup requires a separate persisted draft-image table/log.
+
+Cleanup is safe by default: `IMAGE_CLEANUP_ENABLED=false` and `IMAGE_CLEANUP_DRY_RUN=true`. Do not set `IMAGE_CLEANUP_DRY_RUN=false` in production until dry-run logs and the eligible query have been reviewed. Cleanup never deletes database rows and skips images without `publicId`; it only marks `deletedAt/deleteStatus` after Cloudinary delete succeeds.
+

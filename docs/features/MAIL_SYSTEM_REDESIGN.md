@@ -249,7 +249,7 @@ SYSTEM_EMAIL_PASSWORD=your-app-password-here
 ### Step 3: Run Migration
 
 ```bash
-psql -U postgres -d internflow < db/migrations/2026-05-18-create-email-logs.sql
+psql -U postgres -d internflow < db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql
 ```
 
 ### Step 4: Update Frontend

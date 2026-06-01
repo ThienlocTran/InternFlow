@@ -1,5 +1,6 @@
 package com.java6.springboot.internflow.service.impl;
 
+import com.java6.springboot.internflow.config.AdminAccessProperties;
 import com.java6.springboot.internflow.dto.request.UserProfileRequest;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
@@ -9,6 +10,7 @@ import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.InternshipCohortRepository;
 import com.java6.springboot.internflow.service.UserService;
+import com.java6.springboot.internflow.util.ProfileCompleteness;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -21,23 +23,19 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
-    private static final Set<String> ADMIN_EMAILS = Set.of(
-            "tranthienloc.nina@gmail.com",
-            "tranthienloc21102005@gmail.com",
-            "daonguyenquocviet9190@gmail.com"
-    );
-
     private final AppUserRepository appUserRepository;
     private final InternshipCohortRepository internshipCohortRepository;
+    private final AdminAccessProperties adminAccessProperties;
 
     @Override
     @Transactional
     public UserResponse createProfile(UserProfileRequest request) {
-        validateProfile(request);
+        UserRole resolvedRole = resolveRole(request);
+        validateProfile(request, resolvedRole);
         if (appUserRepository.existsByEmail(normalizeEmail(request.email()))) {
             throw new BusinessException("Email da ton tai");
         }
-        if (StringUtils.hasText(request.studentCode()) && appUserRepository.existsByStudentCode(request.studentCode())) {
+        if (StringUtils.hasText(request.studentCode()) && appUserRepository.existsByStudentCode(request.studentCode().trim())) {
             throw new BusinessException("MSSV da ton tai");
         }
 
@@ -48,7 +46,7 @@ public class UserServiceImpl implements UserService {
                 .studentClass(trimToNull(request.studentClass()))
                 .school(trimToNull(request.school()))
                 .phone(trimToNull(request.phone()))
-                .role(resolveRole(request))
+                .role(resolvedRole)
                 .build();
         if (user.getRole() == UserRole.INTERN) {
             internshipCohortRepository.findFirstByActiveTrueAndDefaultForNewStudentsTrueOrderByCreatedAtDesc()
@@ -61,15 +59,19 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserResponse updateProfile(UUID id, UserProfileRequest request) {
-        validateProfile(request);
+        if (request == null || !StringUtils.hasText(request.email())) {
+            throw new BusinessException("Email la bat buoc");
+        }
         AppUser user = findUser(id);
         String normalizedEmail = normalizeEmail(request.email());
+        UserRole effectiveRole = adminAccessProperties.isAdminEmail(normalizedEmail) ? UserRole.ADMIN : user.getRole();
+        validateProfile(request, effectiveRole);
         if (!user.getEmail().equals(normalizedEmail) && appUserRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException("Email da ton tai");
         }
         if (StringUtils.hasText(request.studentCode())
-                && !request.studentCode().equals(user.getStudentCode())
-                && appUserRepository.existsByStudentCode(request.studentCode())) {
+                && !request.studentCode().trim().equals(user.getStudentCode())
+                && appUserRepository.existsByStudentCode(request.studentCode().trim())) {
             throw new BusinessException("MSSV da ton tai");
         }
 
@@ -79,7 +81,7 @@ public class UserServiceImpl implements UserService {
         user.setStudentClass(trimToNull(request.studentClass()));
         user.setSchool(trimToNull(request.school()));
         user.setPhone(trimToNull(request.phone()));
-        if (ADMIN_EMAILS.contains(normalizedEmail)) {
+        if (effectiveRole == UserRole.ADMIN) {
             user.setRole(UserRole.ADMIN);
         }
         if (user.getRole() == UserRole.INTERN && user.getCohort() == null) {
@@ -116,24 +118,20 @@ public class UserServiceImpl implements UserService {
         }
 
         AppUser user = findUser(userId);
-        
-        // Prevent changing role of admin users
+
         if (user.getRole() == UserRole.ADMIN) {
             throw new BusinessException("Khong the thay doi role cua admin");
         }
-        
-        // Prevent setting role to ADMIN through this endpoint
+
         if (newRole == UserRole.ADMIN) {
             throw new BusinessException("Khong the set role thanh ADMIN qua endpoint nay");
         }
 
-        // Validate role transition
         UserRole currentRole = user.getRole();
         if (currentRole == newRole) {
             throw new BusinessException("User da co role nay roi");
         }
 
-        // Only allow INTERN <-> TEAM_LEADER transitions (and MANAGER if needed)
         if (!isValidRoleTransition(currentRole, newRole)) {
             throw new BusinessException("Khong the chuyen tu " + currentRole + " sang " + newRole);
         }
@@ -143,8 +141,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private boolean isValidRoleTransition(UserRole from, UserRole to) {
-        // Allow transitions between INTERN, TEAM_LEADER, and MANAGER
-        Set<UserRole> allowedRoles = Set.of(UserRole.INTERN, UserRole.TEAM_LEADER, UserRole.MANAGER);
+        Set<UserRole> allowedRoles = Set.of(UserRole.INTERN, UserRole.TEAM_LEADER);
         return allowedRoles.contains(from) && allowedRoles.contains(to);
     }
 
@@ -153,12 +150,27 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
     }
 
-    private void validateProfile(UserProfileRequest request) {
+    private void validateProfile(UserProfileRequest request, UserRole role) {
         if (request == null || !StringUtils.hasText(request.email())) {
             throw new BusinessException("Email la bat buoc");
         }
         if (!StringUtils.hasText(request.fullName())) {
             throw new BusinessException("Ho ten la bat buoc");
+        }
+        if (!ProfileCompleteness.requiresCompleteProfile(role)) {
+            return;
+        }
+        if (!StringUtils.hasText(request.studentCode())) {
+            throw new BusinessException("MSSV la bat buoc");
+        }
+        if (!StringUtils.hasText(request.studentClass())) {
+            throw new BusinessException("Lop la bat buoc");
+        }
+        if (!StringUtils.hasText(request.school())) {
+            throw new BusinessException("Truong la bat buoc");
+        }
+        if (!StringUtils.hasText(request.phone())) {
+            throw new BusinessException("So dien thoai la bat buoc");
         }
     }
 
@@ -167,10 +179,10 @@ public class UserServiceImpl implements UserService {
     }
 
     private UserRole resolveRole(UserProfileRequest request) {
-        if (ADMIN_EMAILS.contains(normalizeEmail(request.email()))) {
+        if (request != null && adminAccessProperties.isAdminEmail(request.email())) {
             return UserRole.ADMIN;
         }
-        return request.role() == null ? UserRole.INTERN : request.role();
+        return request == null || request.role() == null ? UserRole.INTERN : request.role();
     }
 
     private String normalizeEmail(String email) {

@@ -94,7 +94,7 @@ git push origin main
   ```
 - Chạy migration:
   ```sql
-  \i db/migrations/2026-05-12-role-policy-night-bonus.sql
+\i db/migrations/2026-05-31-r2-foundation-shift-photo-source.sql
   ```
 
 ### 4. CORS Configuration
@@ -111,7 +111,7 @@ git push origin main
 
 1. **Health Check**
    ```bash
-   curl https://your-app-name.onrender.com/actuator/health
+   curl https://your-app-name.onrender.com/api/health/live
    ```
 
 2. **Xem Logs**
@@ -165,3 +165,14 @@ Khi sẵn sàng production:
 
 - Render Docs: https://render.com/docs
 - Community: https://community.render.com
+
+## Health endpoints and Render keep-alive
+
+Use `GET /api/health/live` for Render health checks and keep-alive pings. This endpoint returns a lightweight liveness response with `dbChecked=false` and does not call repositories, services, `DataSource`, or PostgreSQL.
+
+`GET /api/ping` is also lightweight and remains available for compatibility.
+
+Use `GET /api/health/ready` only for deploy/debug readiness checks. It opens a database connection and validates PostgreSQL, so it can wake Neon compute and must not be used for automatic keep-alive traffic.
+
+The keep-alive scheduler defaults to `KEEP_ALIVE_ENDPOINT=/api/health/live`. Do not configure it to `/api/health/ready` or `/actuator/health`; if Spring Boot Actuator is added later, its default health endpoint may include `DataSourceHealthIndicator` and check the database.
+

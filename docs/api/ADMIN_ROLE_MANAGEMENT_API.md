@@ -4,7 +4,7 @@
 API này cho phép admin thay đổi role của user trong hệ thống. Admin có thể:
 - **Thăng chức**: Nâng INTERN lên TEAM_LEADER
 - **Giáng chức**: Hạ TEAM_LEADER xuống INTERN
-- Thay đổi giữa các role: INTERN, TEAM_LEADER, MANAGER
+- Thay đổi giữa các role: INTERN, TEAM_LEADER
 
 ## Endpoint
 
@@ -28,7 +28,7 @@ PATCH /api/admin/students/{userId}/role
 
 | Field | Type | Required | Description | Valid Values |
 |-------|------|----------|-------------|--------------|
-| role | String (Enum) | Yes | Role mới cho user | INTERN, TEAM_LEADER, MANAGER |
+| role | String (Enum) | Yes | Role mới cho user | INTERN, TEAM_LEADER |
 
 ## Response Structure
 
@@ -90,30 +90,13 @@ curl -X PATCH "http://localhost:8080/api/admin/students/123e4567-e89b-12d3-a456-
 - Sinh viên yêu cầu bỏ quyền team leader
 - Tái cấu trúc team
 
-### 3. Nâng lên MANAGER
-```bash
-curl -X PATCH "http://localhost:8080/api/admin/students/123e4567-e89b-12d3-a456-426614174000/role" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -d '{
-    "role": "MANAGER"
-  }'
-```
-
-**Khi nào sử dụng:**
-- Cần người quản lý cấp cao hơn
-- Sinh viên có trách nhiệm giám sát nhiều team
 
 ## Business Rules
 
 ### 1. Role Transitions (Chuyển đổi role hợp lệ)
 ✅ **Được phép:**
 - INTERN → TEAM_LEADER
-- INTERN → MANAGER
 - TEAM_LEADER → INTERN
-- TEAM_LEADER → MANAGER
-- MANAGER → INTERN
-- MANAGER → TEAM_LEADER
 
 ❌ **Không được phép:**
 - Bất kỳ role nào → ADMIN (chỉ set qua email whitelist)

@@ -65,6 +65,9 @@ public class ReportEntry {
     @Column(name = "reference_links", columnDefinition = "text")
     private String referenceLinks;
 
+    @Column(name = "source_references", columnDefinition = "text")
+    private String sourceReferences;
+
     @Column(name = "page_count", nullable = false)
     private int pageCount;
 
