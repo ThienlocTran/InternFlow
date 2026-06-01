@@ -9,9 +9,12 @@ NoResourceFoundException: No static resource api/health
 
 ## ✅ Đã fix
 
-Tôi đã tạo `HealthController.java` với 2 endpoints:
-- `GET /api/health` - Health check với thông tin chi tiết
-- `GET /api/ping` - Simple ping/pong
+Tôi đã tạo `HealthController.java` với lightweight endpoints:
+- `GET /api/health/live` - liveness cho Render/UptimeRobot/keep-alive, không chạm DB, `dbChecked=false`
+- `GET /api/health` - compatibility lightweight, không chạm DB, `dbChecked=false`
+- `GET /api/ping` - Simple ping/pong, không chạm DB
+
+`GET /api/health/ready` chỉ dùng để debug/deploy readiness thủ công. Endpoint này có DB check và có thể wake Neon, không dùng cho keep-alive/smoke check định kỳ.
 
 ## 🚀 Cách Redeploy
 
@@ -42,18 +45,21 @@ git push origin main
 
 #### Test Health Check:
 ```bash
-curl https://internflow-e1to.onrender.com/api/health
+curl https://internflow-e1to.onrender.com/api/health/live
 ```
 
 **Kết quả mong đợi:**
 ```json
 {
+  "dbChecked": false,
   "status": "UP",
-  "timestamp": "2026-05-13T11:50:00",
-  "service": "InternFlow Backend",
-  "version": "1.0.0"
+  "service": "InternFlow",
+  "timestamp": "..."
 }
 ```
+
+UptimeRobot URL nên cấu hình:
+`https://internflow-e1to.onrender.com/api/health/live`
 
 #### Test Ping:
 ```bash
@@ -100,7 +106,7 @@ Backend đã UP và running!
 
 ### 1. Verify Health Check
 ```bash
-curl https://internflow-e1to.onrender.com/api/health
+curl https://internflow-e1to.onrender.com/api/health/live
 ```
 
 ### 2. Test API endpoints khác
@@ -152,7 +158,8 @@ CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app
 - [ ] Commit và push code
 - [ ] Redeploy trên Render
 - [ ] Đợi deploy xong (status: Live)
-- [ ] Test `/api/health` thành công
+- [ ] Test `/api/health/live` thành công
+- [ ] Confirm UptimeRobot/Render/keep-alive use `/api/health/live`, not `/api/health/ready` or `/actuator/health`
 - [ ] Test `/api/ping` thành công
 - [ ] Sẵn sàng deploy frontend
 
