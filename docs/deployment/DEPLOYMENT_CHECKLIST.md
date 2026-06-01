@@ -99,6 +99,8 @@ Vào Web Service → Environment → Add Environment Variables:
 ### 4. Keep-alive endpoint
 - [ ] `KEEP_ALIVE_ENDPOINT` = `/api/health/live`
 - [ ] Khong dung `/api/health/ready` hoac `/actuator/health` cho keep-alive vi cac endpoint nay co the cham database va lam Neon compute active.
+- [ ] UptimeRobot URL = `https://internflow-e1to.onrender.com/api/health/live`
+- [ ] `/api/health/live`, `/api/health`, `/api/ping` are lightweight and do not touch DB; `/api/health/ready` may touch DB and is manual readiness only.
 
 ## Sau khi Deploy
 
