@@ -120,7 +120,7 @@ git push origin main
 
 3. **Test API**
    ```bash
-   curl https://your-app-name.onrender.com/api/health
+   curl https://your-app-name.onrender.com/api/health/live
    ```
 
 ## Troubleshooting
@@ -169,6 +169,10 @@ Khi sẵn sàng production:
 ## Health endpoints and Render keep-alive
 
 Use `GET /api/health/live` for Render health checks and keep-alive pings. This endpoint returns a lightweight liveness response with `dbChecked=false` and does not call repositories, services, `DataSource`, or PostgreSQL.
+
+UptimeRobot should monitor `https://internflow-e1to.onrender.com/api/health/live`.
+
+`GET /api/health` is a compatibility lightweight endpoint and also returns `dbChecked=false`.
 
 `GET /api/ping` is also lightweight and remains available for compatibility.
 
