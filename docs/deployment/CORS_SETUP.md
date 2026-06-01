@@ -56,7 +56,7 @@ CORS_ALLOWED_ORIGINS=https://internflow.vercel.app,https://internflow-staging.ve
 ### Từ Browser Console (Frontend)
 
 ```javascript
-fetch('https://internflow-backend.onrender.com/api/health')
+fetch('https://internflow-backend.onrender.com/api/health/live')
   .then(res => res.json())
   .then(data => console.log('CORS OK:', data))
   .catch(err => console.error('CORS Error:', err));

@@ -162,6 +162,10 @@ Nếu gặp vấn đề:
 
 Use `GET /api/health/live` for Render health checks and keep-alive pings. This endpoint returns a lightweight liveness response with `dbChecked=false` and does not call repositories, services, `DataSource`, or PostgreSQL.
 
+UptimeRobot should monitor `https://internflow-e1to.onrender.com/api/health/live`.
+
+`GET /api/health` is a compatibility lightweight endpoint and also returns `dbChecked=false`.
+
 `GET /api/ping` is also lightweight and remains available for compatibility.
 
 Use `GET /api/health/ready` only for deploy/debug readiness checks. It opens a database connection and validates PostgreSQL, so it can wake Neon compute and must not be used for automatic keep-alive traffic.

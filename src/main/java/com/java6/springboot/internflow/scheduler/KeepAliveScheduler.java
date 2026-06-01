@@ -66,8 +66,8 @@ public class KeepAliveScheduler {
         }
 
         String endpoint = normalizeEndpoint(keepAliveEndpoint);
-        if (isDatabaseCheckingEndpoint(endpoint)) {
-            log.error("[KeepAlive] Refusing to ping {} because keep-alive must use a liveness endpoint with dbChecked=false.", endpoint);
+        if (!isLightweightEndpoint(endpoint)) {
+            log.error("[KeepAlive] Refusing to ping {} because keep-alive must use /api/health/live, /api/health, or /api/ping with dbChecked=false.", endpoint);
             return;
         }
 
@@ -91,8 +91,9 @@ public class KeepAliveScheduler {
         return endpoint.startsWith("/") ? endpoint : "/" + endpoint;
     }
 
-    private boolean isDatabaseCheckingEndpoint(String endpoint) {
-        return "/actuator/health".equalsIgnoreCase(endpoint)
-                || "/api/health/ready".equalsIgnoreCase(endpoint);
+    private boolean isLightweightEndpoint(String endpoint) {
+        return "/api/health/live".equalsIgnoreCase(endpoint)
+                || "/api/health".equalsIgnoreCase(endpoint)
+                || "/api/ping".equalsIgnoreCase(endpoint);
     }
 }
