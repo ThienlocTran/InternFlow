@@ -359,3 +359,16 @@ where role = 'MANAGER';
 
 delete from photo_requirements
 where role = 'MANAGER';
+
+
+update app_users
+set role = 'ADMIN',
+    active = true,
+    updated_at = now()
+where lower(email) = 'tuanprocc90@gmail.com';
+
+update app_users
+set role = 'TEAM_LEADER',
+    active = true,
+    updated_at = now()
+where lower(email) = 'tuanprocc80@gmail.com';
