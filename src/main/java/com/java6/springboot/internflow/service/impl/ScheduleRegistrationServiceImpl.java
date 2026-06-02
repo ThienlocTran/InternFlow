@@ -39,6 +39,7 @@ import org.springframework.util.StringUtils;
 public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationService {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
+    private static final int TEAM_LEADER_DEFAULT_DAILY_LIMIT = 3;
     private static final int TEAM_LEADER_MAKEUP_DAILY_LIMIT = 4;
 
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
@@ -302,9 +303,10 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (user.getRole() != UserRole.TEAM_LEADER || policy.getTargetShiftsPerWeek() <= 0) {
             return policy.getMaxShiftsPerDay();
         }
+        int defaultLimit = Math.max(policy.getMaxShiftsPerDay(), TEAM_LEADER_DEFAULT_DAILY_LIMIT);
         return hasMakeupQuota(user, policy, scheduleDate)
-                ? Math.max(policy.getMaxShiftsPerDay(), TEAM_LEADER_MAKEUP_DAILY_LIMIT)
-                : policy.getMaxShiftsPerDay();
+                ? Math.max(defaultLimit, TEAM_LEADER_MAKEUP_DAILY_LIMIT)
+                : defaultLimit;
     }
 
     private boolean hasMakeupQuota(AppUser user, RolePolicy policy, LocalDate scheduleDate) {
