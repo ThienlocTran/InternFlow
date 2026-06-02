@@ -75,6 +75,7 @@ git push origin main
 Vào Web Service → Environment → Add Environment Variables:
 
 - [ ] `SPRING_PROFILES_ACTIVE` = `production`
+- [ ] `SPRING_JPA_HIBERNATE_DDL_AUTO` = `validate` (production must not auto-update schema)
 - [ ] `DATABASE_URL` = (từ Render Database)
 - [ ] `DATABASE_USERNAME` = (từ Render Database)
 - [ ] `DATABASE_PASSWORD` = (từ Render Database)
@@ -98,6 +99,7 @@ Vào Web Service → Environment → Add Environment Variables:
 
 ### 4. Keep-alive endpoint
 - [ ] `KEEP_ALIVE_ENDPOINT` = `/api/health/live`
+- [ ] `KEEP_ALIVE_ENABLED` = `true`
 - [ ] Khong dung `/api/health/ready` hoac `/actuator/health` cho keep-alive vi cac endpoint nay co the cham database va lam Neon compute active.
 - [ ] UptimeRobot URL = `https://internflow-e1to.onrender.com/api/health/live`
 - [ ] `/api/health/live`, `/api/health`, `/api/ping` are lightweight and do not touch DB; `/api/health/ready` may touch DB and is manual readiness only.
