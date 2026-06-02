@@ -3,10 +3,12 @@ package com.java6.springboot.internflow.service.impl;
 import com.java6.springboot.internflow.dto.request.AddTeamMemberRequest;
 import com.java6.springboot.internflow.dto.request.TeamRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
+import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.MemberAttendanceDetailResponse;
 import com.java6.springboot.internflow.dto.response.ReportJournalSummaryResponse;
 import com.java6.springboot.internflow.dto.response.ScheduleRegistrationResponse;
+import com.java6.springboot.internflow.dto.response.ShiftPeerComplianceResponse;
 import com.java6.springboot.internflow.dto.response.ShiftPeerResponse;
 import com.java6.springboot.internflow.dto.response.TeamMemberDetailResponse;
 import com.java6.springboot.internflow.dto.response.TeamMemberFullDetailResponse;
@@ -14,27 +16,36 @@ import com.java6.springboot.internflow.dto.response.TeamResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
+import com.java6.springboot.internflow.entity.ReportEntry;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.entity.Team;
 import com.java6.springboot.internflow.entity.TeamMember;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
+import com.java6.springboot.internflow.enums.AttendanceImagePhase;
+import com.java6.springboot.internflow.enums.AttendanceImageType;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
+import com.java6.springboot.internflow.repository.AttendanceImageRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
+import com.java6.springboot.internflow.repository.ReportDocumentRepository;
+import com.java6.springboot.internflow.repository.ReportEntryRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.TeamMemberRepository;
 import com.java6.springboot.internflow.repository.TeamRepository;
 import com.java6.springboot.internflow.service.AttendanceService;
 import com.java6.springboot.internflow.service.ReportJournalService;
 import com.java6.springboot.internflow.service.TeamService;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -50,6 +61,9 @@ public class TeamServiceImpl implements TeamService {
     private final AppUserRepository appUserRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AttendanceRepository attendanceRepository;
+    private final AttendanceImageRepository attendanceImageRepository;
+    private final ReportDocumentRepository reportDocumentRepository;
+    private final ReportEntryRepository reportEntryRepository;
     private final AttendanceService attendanceService;
     private final ReportJournalService reportJournalService;
 
@@ -149,9 +163,108 @@ public class TeamServiceImpl implements TeamService {
                 .stream()
                 .map(schedules -> new ShiftPeerResponse(
                         UserResponse.from(schedules.get(0).getUser()),
-                        schedules.stream().map(ScheduleRegistrationResponse::from).toList()
+                        schedules.stream().map(ScheduleRegistrationResponse::from).toList(),
+                        complianceFor(schedules.get(0).getUser(), date, schedules)
                 ))
                 .toList();
+    }
+
+    private ShiftPeerComplianceResponse complianceFor(AppUser user, LocalDate date, List<ScheduleRegistration> schedules) {
+        List<Attendance> attendances = attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(user, date);
+        int missingImages = schedules.stream()
+                .mapToInt(schedule -> attendances.stream()
+                        .filter(attendance -> Objects.equals(attendance.getShift().getId(), schedule.getShift().getId()))
+                        .findFirst()
+                        .map(this::missingImages)
+                        .orElse(requiredImages(schedule.getShift())))
+                .sum();
+        int requiredReportPages = requiredReportPages(schedules.stream().map(ScheduleRegistration::getShift).toList());
+        int submittedReportPages = reportDocumentRepository.findByUser(user)
+                .flatMap(document -> reportEntryRepository.findByDocumentAndWorkDate(document, date))
+                .map(ReportEntry::getPageCount)
+                .orElse(0);
+        int missingReportPages = Math.max(0, requiredReportPages - submittedReportPages);
+        return new ShiftPeerComplianceResponse(
+                missingImages,
+                missingReportPages,
+                missingImages == 0,
+                requiredReportPages == 0 || missingReportPages == 0
+        );
+    }
+
+    private int missingImages(Attendance attendance) {
+        List<AttendanceImageResponse> images = attendanceImageRepository
+                .findByAttendanceIdOrderByExpectedTimeAscDisplayOrderAsc(attendance.getId())
+                .stream()
+                .map(AttendanceImageResponse::from)
+                .toList();
+        int requiredPersonal = 2 + personalIntervalCount(attendance);
+        int uploadedPersonal = legacyCount(attendance.getCheckinTimemarkImageUrl(), attendance.getCheckoutTimemarkImageUrl())
+                + countImages(images, AttendanceImageType.PERSONAL_TIMEMARK);
+        int requiredGroup = groupSlotCount(attendance);
+        int uploadedGroup = countImages(images, AttendanceImageType.GROUP);
+        return Math.max(0, requiredPersonal - uploadedPersonal) + Math.max(0, requiredGroup - uploadedGroup);
+    }
+
+    private int requiredImages(Shift shift) {
+        return 2 + personalIntervalCount(shift) + groupSlotCount(shift);
+    }
+
+    private int requiredReportPages(List<Shift> shifts) {
+        if (shifts.isEmpty()) {
+            return 0;
+        }
+        boolean hasDayShift = shifts.stream()
+                .map(Shift::getName)
+                .anyMatch(name -> "Ca 1".equals(name) || "Ca 2".equals(name));
+        return hasDayShift ? 8 : 5;
+    }
+
+    private int personalIntervalCount(Attendance attendance) {
+        return personalIntervalCount(attendance.getShift());
+    }
+
+    private int personalIntervalCount(Shift shift) {
+        long minutes = Duration.between(shift.getStartTime(), shift.getEndTime()).toMinutes();
+        return (int) Math.max(0, (minutes / 30) - 1);
+    }
+
+    private int groupSlotCount(Attendance attendance) {
+        return groupSlotCount(attendance.getShift());
+    }
+
+    private int groupSlotCount(Shift shift) {
+        return groupSlots(shift).size();
+    }
+
+    private List<LocalTime> groupSlots(Shift shift) {
+        List<LocalTime> slots = new java.util.ArrayList<>();
+        LocalTime cursor = shift.getStartTime().withMinute(0).withSecond(0).withNano(0);
+        if (!cursor.isAfter(shift.getStartTime())) {
+            cursor = cursor.plusHours(1);
+        }
+        while (cursor.isBefore(shift.getEndTime())) {
+            slots.add(cursor);
+            cursor = cursor.plusHours(1);
+        }
+        return slots;
+    }
+
+    private int countImages(List<AttendanceImageResponse> images, AttendanceImageType type) {
+        return (int) images.stream()
+                .filter(image -> image.imageType() == type && image.phase() == AttendanceImagePhase.DURING_SHIFT)
+                .count();
+    }
+
+    private int legacyCount(String firstUrl, String secondUrl) {
+        int count = 0;
+        if (StringUtils.hasText(firstUrl)) {
+            count++;
+        }
+        if (StringUtils.hasText(secondUrl)) {
+            count++;
+        }
+        return count;
     }
 
     @Override
