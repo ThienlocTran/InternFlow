@@ -3,11 +3,10 @@ package com.java6.springboot.internflow.service.impl;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.AttendanceImage;
 import com.java6.springboot.internflow.entity.AttendancePhotoRequirement;
-import com.java6.springboot.internflow.entity.PhotoRequirement;
 import com.java6.springboot.internflow.enums.AttendanceImagePhase;
+import com.java6.springboot.internflow.enums.AttendanceImageType;
 import com.java6.springboot.internflow.enums.AttendancePhotoRequirementStatus;
 import com.java6.springboot.internflow.repository.AttendancePhotoRequirementRepository;
-import com.java6.springboot.internflow.repository.PhotoRequirementRepository;
 import com.java6.springboot.internflow.service.AttendancePhotoRequirementService;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -21,23 +20,29 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AttendancePhotoRequirementServiceImpl implements AttendancePhotoRequirementService {
 
+    private static final int PERSONAL_INTERVAL_MINUTES = 30;
+
     private final AttendancePhotoRequirementRepository attendancePhotoRequirementRepository;
-    private final PhotoRequirementRepository photoRequirementRepository;
 
     @Override
     @Transactional
     public List<AttendancePhotoRequirement> createForAttendance(Attendance attendance) {
         List<AttendancePhotoRequirement> requirements = new ArrayList<>();
-        List<PhotoRequirement> templates = photoRequirementRepository
-                .findByRoleAndActiveTrueOrderByPhaseAscImageTypeAsc(attendance.getUser().getRole())
-                .stream()
-                .filter(template -> template.getShift() == null || template.getShift().getId().equals(attendance.getShift().getId()))
-                .toList();
-
-        for (PhotoRequirement template : templates) {
-            for (LocalTime expectedTime : expectedTimes(attendance, template)) {
-                requirements.add(upsertPendingRequirement(attendance, template, expectedTime));
-            }
+        for (LocalTime expectedTime : personalAuditTimes(attendance)) {
+            requirements.add(upsertPendingRequirement(
+                    attendance,
+                    AttendanceImageType.PERSONAL_TIMEMARK,
+                    expectedTime,
+                    "Anh TimeMark giua ca"
+            ));
+        }
+        for (LocalTime expectedTime : groupAuditTimes(attendance)) {
+            requirements.add(upsertPendingRequirement(
+                    attendance,
+                    AttendanceImageType.GROUP,
+                    expectedTime,
+                    "Anh nhom giua ca"
+            ));
         }
         return requirements;
     }
@@ -68,47 +73,55 @@ public class AttendancePhotoRequirementServiceImpl implements AttendancePhotoReq
 
     private AttendancePhotoRequirement upsertPendingRequirement(
             Attendance attendance,
-            PhotoRequirement template,
-            LocalTime expectedTime
+            AttendanceImageType imageType,
+            LocalTime expectedTime,
+            String note
     ) {
         return attendancePhotoRequirementRepository
                 .findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
                         attendance.getId(),
-                        template.getImageType(),
-                        template.getPhase(),
+                        imageType,
+                        AttendanceImagePhase.DURING_SHIFT,
                         expectedTime
                 )
                 .orElseGet(() -> attendancePhotoRequirementRepository.save(AttendancePhotoRequirement.builder()
                         .attendance(attendance)
-                        .imageType(template.getImageType())
-                        .phase(template.getPhase())
+                        .imageType(imageType)
+                        .phase(AttendanceImagePhase.DURING_SHIFT)
                         .expectedTime(expectedTime)
-                        .required(template.getRequiredCount() > 0)
+                        .required(true)
                         .status(AttendancePhotoRequirementStatus.PENDING)
-                        .note(template.getNote())
+                        .note(note)
                         .build()));
     }
 
-    private List<LocalTime> expectedTimes(Attendance attendance, PhotoRequirement template) {
-        int count = Math.max(1, template.getRequiredCount());
+    private List<LocalTime> personalAuditTimes(Attendance attendance) {
         List<LocalTime> times = new ArrayList<>();
-        for (int index = 0; index < count; index++) {
-            times.add(expectedTime(attendance, template, index));
+        LocalTime end = attendance.getShift().getEndTime();
+        for (LocalTime cursor = attendance.getShift().getStartTime().plusMinutes(PERSONAL_INTERVAL_MINUTES);
+             cursor.isBefore(end);
+             cursor = cursor.plusMinutes(PERSONAL_INTERVAL_MINUTES)) {
+            times.add(cursor);
         }
         return times;
     }
 
-    private LocalTime expectedTime(Attendance attendance, PhotoRequirement template, int index) {
-        if (template.getPhase() == AttendanceImagePhase.CHECKOUT) {
-            return attendance.getShift().getEndTime().plusMinutes((long) index * fallbackInterval(template));
+    private List<LocalTime> groupAuditTimes(Attendance attendance) {
+        List<LocalTime> times = new ArrayList<>();
+        LocalTime end = attendance.getShift().getEndTime();
+        for (LocalTime cursor = nextFullHourAfter(attendance.getShift().getStartTime());
+             cursor.isBefore(end);
+             cursor = cursor.plusHours(1)) {
+            times.add(cursor);
         }
-        if (template.getPhase() == AttendanceImagePhase.DURING_SHIFT) {
-            return attendance.getShift().getStartTime().plusMinutes((long) (index + 1) * fallbackInterval(template));
-        }
-        return attendance.getShift().getStartTime().plusMinutes((long) index * fallbackInterval(template));
+        return times;
     }
 
-    private int fallbackInterval(PhotoRequirement template) {
-        return template.getIntervalMinutes() == null ? 1 : template.getIntervalMinutes();
+    private LocalTime nextFullHourAfter(LocalTime time) {
+        LocalTime fullHour = time.withMinute(0).withSecond(0).withNano(0);
+        if (!fullHour.isAfter(time)) {
+            return fullHour.plusHours(1);
+        }
+        return fullHour;
     }
 }
