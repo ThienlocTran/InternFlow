@@ -39,6 +39,7 @@ import org.springframework.util.StringUtils;
 public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationService {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
+    private static final int TEAM_LEADER_MAKEUP_DAILY_LIMIT = 4;
 
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AppUserRepository appUserRepository;
@@ -69,7 +70,8 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                 request.scheduleDate(),
                 ScheduleRegistrationStatus.REGISTERED
         );
-        if (existingRegistrations.size() + shifts.size() > policy.getMaxShiftsPerDay()) {
+        int dailyLimit = effectiveDailyLimit(user, policy, request.scheduleDate());
+        if (existingRegistrations.size() + shifts.size() > dailyLimit) {
             throw new BusinessException("Vuot so ca toi da trong ngay");
         }
         LocalDate cumulativeQuotaStart = resolveQuotaStartDate(user, request.scheduleDate());
@@ -294,5 +296,31 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         }
         long weeksElapsed = ChronoUnit.WEEKS.between(quotaStartDate, scheduleDate) + 1;
         return Math.toIntExact(weeksElapsed * policy.getTargetShiftsPerWeek());
+    }
+
+    private int effectiveDailyLimit(AppUser user, RolePolicy policy, LocalDate scheduleDate) {
+        if (user.getRole() != UserRole.TEAM_LEADER || policy.getTargetShiftsPerWeek() <= 0) {
+            return policy.getMaxShiftsPerDay();
+        }
+        return hasMakeupQuota(user, policy, scheduleDate)
+                ? Math.max(policy.getMaxShiftsPerDay(), TEAM_LEADER_MAKEUP_DAILY_LIMIT)
+                : policy.getMaxShiftsPerDay();
+    }
+
+    private boolean hasMakeupQuota(AppUser user, RolePolicy policy, LocalDate scheduleDate) {
+        LocalDate quotaStart = resolveQuotaStartDate(user, scheduleDate);
+        LocalDate currentWeekStart = scheduleDate.with(DayOfWeek.MONDAY);
+        LocalDate previousWeekEnd = currentWeekStart.minusDays(1);
+        if (quotaStart.isAfter(previousWeekEnd)) {
+            return false;
+        }
+        long actualBeforeWeek = scheduleRegistrationRepository.countByUserAndScheduleDateBetweenAndStatus(
+                user,
+                quotaStart,
+                previousWeekEnd,
+                ScheduleRegistrationStatus.REGISTERED
+        );
+        long expectedBeforeWeek = ChronoUnit.WEEKS.between(quotaStart, currentWeekStart) * policy.getTargetShiftsPerWeek();
+        return actualBeforeWeek < expectedBeforeWeek;
     }
 }

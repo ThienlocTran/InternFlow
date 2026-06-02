@@ -226,4 +226,24 @@ public class InternshipCohortServiceImpl implements InternshipCohortService {
         }
         return slots;
     }
+
+    private void validateRequest(InternshipCohortRequest request) {
+        if (request == null || !StringUtils.hasText(request.code())) {
+            throw new BusinessException("Ma khoa la bat buoc");
+        }
+        if (!StringUtils.hasText(request.name())) {
+            throw new BusinessException("Ten khoa la bat buoc");
+        }
+        if (request.startDate() == null || request.endDate() == null) {
+            throw new BusinessException("Ngay bat dau va ket thuc la bat buoc");
+        }
+        if (request.endDate().isBefore(request.startDate())) {
+            throw new BusinessException("Ngay ket thuc phai sau ngay bat dau");
+        }
+    }
+
+    private InternshipCohort findCohort(UUID cohortId) {
+        return internshipCohortRepository.findById(cohortId)
+                .orElseThrow(() -> new NotFoundException("Khong tim thay khoa thuc tap"));
+    }
 }
