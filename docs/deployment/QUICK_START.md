@@ -66,6 +66,9 @@ Copy từng dòng này và điền giá trị:
 ```bash
 # Spring Profile
 SPRING_PROFILES_ACTIVE=production
+SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+KEEP_ALIVE_ENDPOINT=/api/health/live
+KEEP_ALIVE_ENABLED=true
 
 # Database (lấy từ Neon.tech ở Bước 3)
 DATABASE_URL=<neon-connection-string>
