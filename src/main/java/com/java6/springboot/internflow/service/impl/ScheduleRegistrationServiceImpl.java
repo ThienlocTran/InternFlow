@@ -22,6 +22,8 @@ import com.java6.springboot.internflow.service.ScheduleRegistrationService;
 import java.time.temporal.ChronoUnit;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +37,8 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
 
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AppUserRepository appUserRepository;
@@ -142,8 +146,12 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (!registration.getUser().getId().equals(currentUser.getId())) {
             throw new ForbiddenException("Ban khong co quyen roi ca cua user khac");
         }
-        if (registration.getScheduleDate().isBefore(LocalDate.now())) {
-            throw new BusinessException("Ca da qua ngay nen khong the roi ca");
+        LocalDateTime shiftStart = LocalDateTime.of(
+                registration.getScheduleDate(),
+                registration.getShift().getStartTime()
+        );
+        if (!LocalDateTime.now(BUSINESS_ZONE).isBefore(shiftStart)) {
+            throw new BusinessException("Da den gio bat dau ca nen khong the roi ca");
         }
         boolean attendanceStarted = attendanceRepository.findByUserAndShiftAndAttendanceDate(
                 registration.getUser(),
