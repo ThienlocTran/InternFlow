@@ -64,12 +64,12 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                 .sorted(Comparator.comparingInt(this::shiftOrder).thenComparing(Shift::getStartTime))
                 .toList();
 
-        long existingCount = scheduleRegistrationRepository.countByUserAndScheduleDateAndStatus(
+        List<ScheduleRegistration> existingRegistrations = scheduleRegistrationRepository.findByUserAndScheduleDateAndStatus(
                 user,
                 request.scheduleDate(),
                 ScheduleRegistrationStatus.REGISTERED
         );
-        if (existingCount + shifts.size() > policy.getMaxShiftsPerDay()) {
+        if (existingRegistrations.size() + shifts.size() > policy.getMaxShiftsPerDay()) {
             throw new BusinessException("Vuot so ca toi da trong ngay");
         }
         LocalDate cumulativeQuotaStart = resolveQuotaStartDate(user, request.scheduleDate());
@@ -84,7 +84,10 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (policy.getTargetShiftsPerWeek() > 0 && cumulativeCount + shifts.size() > cumulativeLimit) {
             throw new BusinessException("Vuot quota tich luy den het tuan nay (" + cumulativeLimit + " ca)");
         }
-        if (!isAdjacent(shifts)) {
+        LinkedHashMap<UUID, Shift> combinedShifts = new LinkedHashMap<>();
+        existingRegistrations.forEach(registration -> combinedShifts.put(registration.getShift().getId(), registration.getShift()));
+        shifts.forEach(shift -> combinedShifts.put(shift.getId(), shift));
+        if (!isAdjacent(combinedShifts.values().stream().toList())) {
             throw new BusinessException("Cac ca trong ngay phai lien ke theo thu tu ca");
         }
 
