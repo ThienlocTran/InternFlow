@@ -4,11 +4,13 @@ import com.java6.springboot.internflow.dto.request.AttendanceImageRequest;
 import com.java6.springboot.internflow.dto.request.CheckinRequest;
 import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
+import com.java6.springboot.internflow.dto.response.AttendancePhotoChecklistItemResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
 import com.java6.springboot.internflow.entity.AttendanceImage;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.RolePolicy;
+import com.java6.springboot.internflow.entity.ScheduleRegistration;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
 import com.java6.springboot.internflow.enums.UserRole;
@@ -17,6 +19,7 @@ import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
+import com.java6.springboot.internflow.repository.AttendancePhotoRequirementRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
@@ -47,6 +50,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final ShiftRepository shiftRepository;
     private final RolePolicyRepository rolePolicyRepository;
     private final AttendanceImageRepository attendanceImageRepository;
+    private final AttendancePhotoRequirementRepository attendancePhotoRequirementRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AttendancePhotoRequirementService attendancePhotoRequirementService;
 
@@ -178,6 +182,17 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<AttendancePhotoChecklistItemResponse> getPhotoChecklist(AppUser currentUser, UUID userId, UUID shiftId, LocalDate date) {
+        LocalDate attendanceDate = date == null ? LocalDate.now() : date;
+        AppUser targetUser = resolveChecklistTargetUser(currentUser, userId, shiftId, attendanceDate);
+        return attendancePhotoRequirementRepository.findChecklistByUserAndDate(targetUser.getId(), attendanceDate, shiftId)
+                .stream()
+                .map(AttendancePhotoChecklistItemResponse::from)
+                .toList();
+    }
+
+    @Override
     @Transactional
     public AttendanceImageResponse addImage(AppUser currentUser, UUID attendanceId, AttendanceImageRequest request) {
         validateImageRequest(attendanceId, request);
@@ -243,6 +258,46 @@ public class AttendanceServiceImpl implements AttendanceService {
     private AppUser findUser(UUID id) {
         return appUserRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
+    }
+
+    private AppUser resolveChecklistTargetUser(AppUser currentUser, UUID requestedUserId, UUID shiftId, LocalDate date) {
+        if (requestedUserId == null || currentUser.getId().equals(requestedUserId)) {
+            return currentUser;
+        }
+        AppUser targetUser = findUser(requestedUserId);
+        if (currentUser.getRole() == UserRole.ADMIN) {
+            return targetUser;
+        }
+        if (currentUser.getRole() == UserRole.TEAM_LEADER) {
+            assertLeaderCanInspectUserOnDate(currentUser, targetUser, shiftId, date);
+            return targetUser;
+        }
+        throw new ForbiddenException("Ban khong co quyen xem checklist anh cua user khac");
+    }
+
+    private void assertLeaderCanInspectUserOnDate(AppUser leader, AppUser targetUser, UUID shiftId, LocalDate date) {
+        List<Shift> leaderShifts = scheduleRegistrationRepository
+                .findByUserAndScheduleDateAndStatus(leader, date, ScheduleRegistrationStatus.REGISTERED)
+                .stream()
+                .map(ScheduleRegistration::getShift)
+                .filter(shift -> shiftId == null || shift.getId().equals(shiftId))
+                .distinct()
+                .toList();
+        if (leaderShifts.isEmpty()) {
+            throw new ForbiddenException("Nhom truong chi duoc xem checklist sinh vien trong ca minh da dang ky");
+        }
+        boolean hasSharedShift = !scheduleRegistrationRepository
+                .findByUserAndShiftInAndScheduleDateBetweenAndStatus(
+                        targetUser,
+                        leaderShifts,
+                        date,
+                        date,
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .isEmpty();
+        if (!hasSharedShift) {
+            throw new ForbiddenException("Nhom truong chi duoc xem checklist sinh vien trung ca voi minh");
+        }
     }
 
     private Attendance findAttendance(UUID id) {

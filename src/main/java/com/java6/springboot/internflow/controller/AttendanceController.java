@@ -5,6 +5,7 @@ import com.java6.springboot.internflow.dto.request.AttendanceImageRequest;
 import com.java6.springboot.internflow.dto.request.CheckinRequest;
 import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
+import com.java6.springboot.internflow.dto.response.AttendancePhotoChecklistItemResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.security.CurrentUserService;
@@ -40,6 +41,17 @@ public class AttendanceController {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
         AppUser targetUser = currentUserService.resolveRequestedUser(currentUser, userId);
         return ApiResponse.ok("Lay danh sach diem danh thanh cong", attendanceService.getUserAttendances(targetUser, date));
+    }
+
+    @GetMapping("/photo-checklist")
+    public ApiResponse<List<AttendancePhotoChecklistItemResponse>> getPhotoChecklist(
+            HttpServletRequest httpRequest,
+            @RequestParam(required = false) UUID userId,
+            @RequestParam(required = false) UUID shiftId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        return ApiResponse.ok("Lay checklist anh diem danh thanh cong", attendanceService.getPhotoChecklist(currentUser, userId, shiftId, date));
     }
 
     @PostMapping("/checkin")
