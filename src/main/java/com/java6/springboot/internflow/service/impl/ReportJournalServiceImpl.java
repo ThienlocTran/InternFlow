@@ -159,6 +159,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
         entry.setContent(content);
         entry.setReferenceLinks(trimToNull(request.referenceLinks()));
+        entry.setSourceReferences(trimToNull(request.sourceReferences()));
         entry.setShiftCodes(shiftCodes(daySchedules));
         entry.setShiftCount(daySchedules.size());
         entry.setWorkTimeSummary(workTimeSummary(daySchedules));
@@ -421,6 +422,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 addParagraph(wordDocument, nullToEmpty(entry.getWorkTimeSummary()));
                 addParagraph(wordDocument, "Số trang ước tính: " + entry.getPageCount() + "/" + entry.getRequiredPages());
                 addParagraph(wordDocument, "Tài liệu tham khảo: " + nullToEmpty(entry.getReferenceLinks()));
+                addParagraph(wordDocument, "Nguon trich dan: " + nullToEmpty(entry.getSourceReferences()));
                 addParagraph(wordDocument, nullToEmpty(entry.getContent()));
                 addParagraph(wordDocument, "");
             });
@@ -459,6 +461,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         body.append("\nBáo cáo ngày: ").append(dailyEntry.getPageCount())
                 .append('/').append(dailyEntry.getRequiredPages()).append(" trang ước tính\n");
         body.append("Tài liệu tham khảo theo ca: ").append(nullToEmpty(dailyEntry.getReferenceLinks())).append('\n');
+        body.append("Nguon trich dan theo ca: ").append(nullToEmpty(dailyEntry.getSourceReferences())).append('\n');
         body.append("\nFile Word nhật ký thực tập được đính kèm trong mail này.\n");
         return body.toString();
     }
