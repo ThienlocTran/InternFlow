@@ -10,6 +10,7 @@ import com.java6.springboot.internflow.dto.response.ReportDocumentResponse;
 import com.java6.springboot.internflow.dto.response.ReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.ReportProgressResponse;
 import com.java6.springboot.internflow.dto.response.ReportRevisionResponse;
+import com.java6.springboot.internflow.dto.response.ReportWordUploadResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.AttendanceImage;
@@ -39,12 +40,17 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLDecoder;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -68,6 +74,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -77,6 +84,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private static final int DAY_SHIFT_REQUIRED_PAGES = 8;
     private static final int NIGHT_SHIFT_REQUIRED_PAGES = 5;
     private static final int WORDS_PER_PAGE_ESTIMATE = 210;
+    private static final long MAX_WORD_UPLOAD_BYTES = 10 * 1024 * 1024;
+    private static final String WORD_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    private static final Path WORD_UPLOAD_ROOT = Path.of("uploads", "report-journals");
     private static final int MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
     private static final int MAX_MAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
     private static final DateTimeFormatter SUBJECT_DATE_FORMAT = DateTimeFormatter.ofPattern("d.M.yy");
@@ -181,6 +191,102 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     @Override
+    @Transactional
+    public ReportWordUploadResponse uploadWordEntry(AppUser user, LocalDate workDate, MultipartFile file) {
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc upload nhat ky Word");
+        }
+        if (workDate == null || workDate.isAfter(LocalDate.now().plusDays(1))) {
+            throw new BusinessException("Ngay viet nhat ky khong hop le");
+        }
+        validateWordFile(file);
+        ReportDocument document = getOrCreateDocument(user);
+        List<ScheduleRegistration> daySchedules = registeredSchedules(user, workDate);
+        if (daySchedules.isEmpty()) {
+            throw new BusinessException("Ngay nay chua co ca dang ky nen chua can viet nhat ky");
+        }
+
+        WordDocumentContent wordContent = readWordDocument(file);
+        ReportEntry entry = reportEntryRepository.findByDocumentAndWorkDate(document, workDate)
+                .orElseGet(() -> ReportEntry.builder()
+                        .document(document)
+                        .workDate(workDate)
+                        .build());
+        String oldContent = entry.getContent();
+        int oldPages = entry.getPageCount();
+        int requiredPages = requiredPages(daySchedules);
+        int pageCount = wordContent.pageCount() > 0 ? wordContent.pageCount() : estimatePageCount(wordContent.text());
+
+        entry.setContent(wordContent.text());
+        entry.setShiftCodes(shiftCodes(daySchedules));
+        entry.setShiftCount(daySchedules.size());
+        entry.setWorkTimeSummary(workTimeSummary(daySchedules));
+        entry.setPageCount(pageCount);
+        entry.setRequiredPages(requiredPages);
+        entry.setStatus(pageCount >= requiredPages ? ReportEntryStatus.READY_FOR_MAIL : ReportEntryStatus.NEEDS_MORE_PAGES);
+        ReportEntry savedEntry = reportEntryRepository.save(entry);
+
+        reportRevisionRepository.save(ReportRevision.builder()
+                .entry(savedEntry)
+                .oldContent(oldContent)
+                .newContent(wordContent.text())
+                .diffSummary(diffSummary(oldContent, wordContent.text(), oldPages, pageCount))
+                .pageCountBefore(oldPages)
+                .pageCountAfter(pageCount)
+                .build());
+        saveWordFile(user, workDate, file);
+        refreshDocument(document);
+        document.setCurrentFileName(fileNameOnly(file.getOriginalFilename()));
+        reportDocumentRepository.save(document);
+        return new ReportWordUploadResponse(
+                ReportEntryResponse.from(savedEntry),
+                document.getCurrentFileName(),
+                wordDownloadUrl(user.getId(), workDate),
+                pageCount,
+                wordContent.wordCount()
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StoredWordFile downloadWordEntry(AppUser user, LocalDate workDate) {
+        if (workDate == null) {
+            throw new BusinessException("Ngay tai file Word la bat buoc");
+        }
+        ReportDocument document = reportDocumentRepository.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+        Path filePath = wordFilePath(user.getId(), workDate);
+        if (!Files.exists(filePath)) {
+            throw new NotFoundException("Khong tim thay file Word da upload");
+        }
+        try {
+            return new StoredWordFile(
+                    storedWordDisplayName(user.getId(), workDate, document.getCurrentFileName()),
+                    Files.readAllBytes(filePath),
+                    WORD_CONTENT_TYPE
+            );
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the doc file Word da upload");
+        }
+    }
+
+    private StoredWordFile storedWordFile(AppUser user, LocalDate workDate) {
+        Path filePath = wordFilePath(user.getId(), workDate);
+        if (!Files.exists(filePath)) {
+            return null;
+        }
+        try {
+            ReportDocument document = reportDocumentRepository.findByUser(user).orElse(null);
+            String fileName = document != null && StringUtils.hasText(document.getCurrentFileName())
+                    ? document.getCurrentFileName()
+                    : wordStorageFileName(workDate);
+            return new StoredWordFile(storedWordDisplayName(user.getId(), workDate, fileName), Files.readAllBytes(filePath), WORD_CONTENT_TYPE);
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the doc file Word da upload");
+        }
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<ReportRevisionResponse> getRevisions(AppUser currentUser, UUID entryId) {
         ReportEntry entry = reportEntryRepository.findById(entryId)
@@ -244,12 +350,17 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         String subject = user.getFullName() + ", được " + completedShiftCount
                 + " ca, ngày " + request.workDate().format(SUBJECT_DATE_FORMAT);
         UploadedDocument uploadedDocument = decodeUploadedDocument(request);
+        StoredWordFile storedWordFile = uploadedDocument == null ? storedWordFile(user, request.workDate()) : null;
         String attachmentName = uploadedDocument != null
                 ? uploadedDocument.name()
-                : fileName(user, document.getCompletedShiftCount()) + ".docx";
+                : storedWordFile != null
+                        ? storedWordFile.fileName()
+                        : fileName(user, document.getCompletedShiftCount()) + ".docx";
         byte[] docxBytes = uploadedDocument != null
                 ? uploadedDocument.bytes()
-                : buildJournalDocx(document);
+                : storedWordFile != null
+                        ? storedWordFile.bytes()
+                        : buildJournalDocx(document);
         List<MailAttachment> attachments = new ArrayList<>();
         attachments.add(new MailAttachment(
                 attachmentName,
@@ -345,6 +456,101 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         document.setCompletedShiftCount(completedShifts);
         document.setCurrentFileName(fileName(document.getUser(), completedShifts));
         reportDocumentRepository.save(document);
+    }
+
+    private List<ScheduleRegistration> registeredSchedules(AppUser user, LocalDate workDate) {
+        return scheduleRegistrationRepository
+                .findByUserAndScheduleDateAndStatus(user, workDate, ScheduleRegistrationStatus.REGISTERED)
+                .stream()
+                .sorted(Comparator.comparing(item -> item.getShift().getStartTime()))
+                .toList();
+    }
+
+    private void validateWordFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("File Word la bat buoc");
+        }
+        String filename = file.getOriginalFilename();
+        if (!StringUtils.hasText(filename) || !filename.toLowerCase().endsWith(".docx")) {
+            throw new BusinessException("Chi chap nhan file .docx");
+        }
+        String contentType = file.getContentType();
+        if (StringUtils.hasText(contentType)
+                && !WORD_CONTENT_TYPE.equalsIgnoreCase(contentType)
+                && !"application/octet-stream".equalsIgnoreCase(contentType)) {
+            throw new BusinessException("Content-Type file Word khong hop le");
+        }
+        if (file.getSize() > MAX_WORD_UPLOAD_BYTES) {
+            throw new BusinessException("File Word vuot qua gioi han 10MB");
+        }
+    }
+
+    private WordDocumentContent readWordDocument(MultipartFile file) {
+        try (InputStream input = file.getInputStream(); XWPFDocument wordDocument = new XWPFDocument(input)) {
+            String text = wordDocument.getParagraphs()
+                    .stream()
+                    .map(XWPFParagraph::getText)
+                    .filter(StringUtils::hasText)
+                    .reduce((first, second) -> first + "\n" + second)
+                    .orElse("");
+            return new WordDocumentContent(text, estimatePageCount(text), countWords(text));
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the doc noi dung file Word");
+        }
+    }
+
+    private void saveWordFile(AppUser user, LocalDate workDate, MultipartFile file) {
+        try {
+            Files.createDirectories(wordUserDirectory(user.getId()));
+            try (InputStream input = file.getInputStream()) {
+                Files.copy(input, wordFilePath(user.getId(), workDate), StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.writeString(wordFileNamePath(user.getId(), workDate), fileNameOnly(file.getOriginalFilename()), StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the luu file Word nhat ky");
+        }
+    }
+
+    private Path wordUserDirectory(UUID userId) {
+        return WORD_UPLOAD_ROOT.resolve(userId.toString()).normalize();
+    }
+
+    private Path wordFilePath(UUID userId, LocalDate workDate) {
+        return wordUserDirectory(userId).resolve(wordStorageFileName(workDate)).normalize();
+    }
+
+    private Path wordFileNamePath(UUID userId, LocalDate workDate) {
+        return wordUserDirectory(userId).resolve(workDate + ".name").normalize();
+    }
+
+    private String storedWordDisplayName(UUID userId, LocalDate workDate, String fallback) {
+        Path namePath = wordFileNamePath(userId, workDate);
+        if (Files.exists(namePath)) {
+            try {
+                String fileName = Files.readString(namePath, StandardCharsets.UTF_8).trim();
+                if (StringUtils.hasText(fileName)) {
+                    return fileName;
+                }
+            } catch (IOException ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
+    }
+
+    private String wordStorageFileName(LocalDate workDate) {
+        return workDate + ".docx";
+    }
+
+    private String wordDownloadUrl(UUID userId, LocalDate workDate) {
+        return "/api/report-journals/entries/word?userId=" + userId + "&workDate=" + workDate;
+    }
+
+    private String fileNameOnly(String filename) {
+        if (!StringUtils.hasText(filename)) {
+            return "nhat-ky.docx";
+        }
+        return filename.replace('\\', '/').substring(filename.replace('\\', '/').lastIndexOf('/') + 1);
     }
 
     private void sendMailWithGmailApi(
@@ -642,6 +848,10 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         return Math.max(1, (int) Math.ceil(words / (double) WORDS_PER_PAGE_ESTIMATE));
     }
 
+    private int countWords(String content) {
+        return StringUtils.hasText(content) ? content.trim().split("\\s+").length : 0;
+    }
+
     private String diffSummary(String oldContent, String newContent, int oldPages, int newPages) {
         int oldWords = StringUtils.hasText(oldContent) ? oldContent.trim().split("\\s+").length : 0;
         int newWords = StringUtils.hasText(newContent) ? newContent.trim().split("\\s+").length : 0;
@@ -695,5 +905,8 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     private record UploadedDocument(String name, byte[] bytes) {
+    }
+
+    private record WordDocumentContent(String text, int pageCount, int wordCount) {
     }
 }
