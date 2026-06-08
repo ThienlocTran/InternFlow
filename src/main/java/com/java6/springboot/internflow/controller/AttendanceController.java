@@ -94,6 +94,17 @@ public class AttendanceController {
         return ApiResponse.ok("Them anh diem danh thanh cong", attendanceService.addImage(currentUser, attendanceId, request));
     }
 
+    @PostMapping("/{attendanceId}/requirements/{requirementId}/images")
+    public ApiResponse<AttendanceImageResponse> addImageByRequirement(
+            @PathVariable UUID attendanceId,
+            @PathVariable UUID requirementId,
+            HttpServletRequest httpRequest,
+            @RequestBody AttendanceImageRequest request
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        return ApiResponse.ok("Them anh diem danh thanh cong", attendanceService.addImage(currentUser, attendanceId, withRequirementId(request, requirementId)));
+    }
+
     @GetMapping("/{attendanceId}/images")
     public ApiResponse<List<AttendanceImageResponse>> getImages(
             HttpServletRequest httpRequest,
@@ -101,5 +112,25 @@ public class AttendanceController {
     ) {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
         return ApiResponse.ok("Lay danh sach anh diem danh thanh cong", attendanceService.getImages(currentUser, attendanceId));
+    }
+
+    private AttendanceImageRequest withRequirementId(AttendanceImageRequest request, UUID requirementId) {
+        return new AttendanceImageRequest(
+                requirementId,
+                request == null ? null : request.imageType(),
+                request == null ? null : request.phase(),
+                request == null ? null : request.expectedTime(),
+                request == null ? null : request.imageUrl(),
+                request == null ? null : request.storageProvider(),
+                request == null ? null : request.publicId(),
+                request == null ? null : request.thumbnailUrl(),
+                request == null ? null : request.fileSizeBytes(),
+                request == null ? null : request.mimeType(),
+                request == null ? null : request.width(),
+                request == null ? null : request.height(),
+                request == null ? null : request.sourceReference(),
+                request == null ? null : request.displayOrder(),
+                request == null ? null : request.note()
+        );
     }
 }

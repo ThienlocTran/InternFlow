@@ -7,12 +7,14 @@ import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
 import com.java6.springboot.internflow.dto.response.AttendancePhotoChecklistItemResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
 import com.java6.springboot.internflow.entity.AttendanceImage;
+import com.java6.springboot.internflow.entity.AttendancePhotoRequirement;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
+import com.java6.springboot.internflow.enums.AttendancePhotoRequirementStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.ForbiddenException;
@@ -198,19 +200,20 @@ public class AttendanceServiceImpl implements AttendanceService {
         validateImageRequest(attendanceId, request);
         Attendance attendance = findAttendance(attendanceId);
         assertOwner(currentUser, attendance);
+        AttendancePhotoRequirement requirement = findAndValidateRequirement(attendance, request);
 
         AttendanceImage image = attendanceImageRepository
                 .findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
                         attendanceId,
-                        request.imageType(),
-                        request.phase(),
-                        request.expectedTime()
+                        requirement.getImageType(),
+                        requirement.getPhase(),
+                        requirement.getExpectedTime()
                 )
                 .orElseGet(() -> AttendanceImage.builder()
                         .attendance(attendance)
-                        .imageType(request.imageType())
-                        .phase(request.phase())
-                        .expectedTime(request.expectedTime())
+                        .imageType(requirement.getImageType())
+                        .phase(requirement.getPhase())
+                        .expectedTime(requirement.getExpectedTime())
                         .build());
         image.setImageUrl(request.imageUrl().trim());
         image.setStorageProvider(storageProvider(request));
@@ -225,8 +228,10 @@ public class AttendanceServiceImpl implements AttendanceService {
         image.setNote(trimToNull(request.note()));
 
         AttendanceImage savedImage = attendanceImageRepository.save(image);
-        attendancePhotoRequirementService.createForAttendance(attendance);
-        attendancePhotoRequirementService.linkImage(savedImage);
+        requirement.setAttendanceImage(savedImage);
+        requirement.setStatus(AttendancePhotoRequirementStatus.SATISFIED);
+        requirement.setSkipReason(null);
+        attendancePhotoRequirementRepository.save(requirement);
         return AttendanceImageResponse.from(savedImage);
     }
 
@@ -303,6 +308,34 @@ public class AttendanceServiceImpl implements AttendanceService {
     private Attendance findAttendance(UUID id) {
         return attendanceRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+    }
+
+    private AttendancePhotoRequirement findAndValidateRequirement(Attendance attendance, AttendanceImageRequest request) {
+        AttendancePhotoRequirement requirement = request.requirementId() == null
+                ? attendancePhotoRequirementRepository.findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
+                        attendance.getId(),
+                        request.imageType(),
+                        request.phase(),
+                        request.expectedTime()
+                ).orElseThrow(() -> new BusinessException("Moc anh nay khong nam trong checklist bat buoc"))
+                : attendancePhotoRequirementRepository.findById(request.requirementId())
+                        .orElseThrow(() -> new NotFoundException("Khong tim thay moc anh diem danh"));
+        if (!requirement.getAttendance().getId().equals(attendance.getId())) {
+            throw new ForbiddenException("Moc anh khong thuoc attendance nay");
+        }
+        if (!requirement.isRequired()) {
+            throw new BusinessException("Moc anh nay khong bat buoc upload");
+        }
+        if (request.imageType() != null && request.imageType() != requirement.getImageType()) {
+            throw new BusinessException("Loai anh khong khop voi checklist");
+        }
+        if (request.phase() != null && request.phase() != requirement.getPhase()) {
+            throw new BusinessException("Giai doan anh khong khop voi checklist");
+        }
+        if (request.expectedTime() != null && !request.expectedTime().equals(requirement.getExpectedTime())) {
+            throw new BusinessException("Moc thoi gian anh khong khop voi checklist");
+        }
+        return requirement;
     }
 
     private void assertOwner(AppUser currentUser, Attendance attendance) {
@@ -402,13 +435,13 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (request == null) {
             throw new BusinessException("Du lieu anh la bat buoc");
         }
-        if (request.imageType() == null) {
+        if (request.requirementId() == null && request.imageType() == null) {
             throw new BusinessException("Loai anh la bat buoc");
         }
-        if (request.phase() == null) {
+        if (request.requirementId() == null && request.phase() == null) {
             throw new BusinessException("Giai doan anh la bat buoc");
         }
-        if (request.expectedTime() == null) {
+        if (request.requirementId() == null && request.expectedTime() == null) {
             throw new BusinessException("Moc thoi gian anh la bat buoc");
         }
         if (!StringUtils.hasText(request.imageUrl())) {

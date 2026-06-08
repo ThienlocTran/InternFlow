@@ -9,6 +9,7 @@ import java.time.LocalTime;
 import java.util.UUID;
 
 public record AttendancePhotoChecklistItemResponse(
+        UUID id,
         UUID attendanceId,
         UUID userId,
         UUID shiftId,
@@ -24,6 +25,7 @@ public record AttendancePhotoChecklistItemResponse(
 
     public static AttendancePhotoChecklistItemResponse from(AttendancePhotoRequirement requirement) {
         return new AttendancePhotoChecklistItemResponse(
+                requirement.getId(),
                 requirement.getAttendance().getId(),
                 requirement.getAttendance().getUser().getId(),
                 requirement.getAttendance().getShift().getId(),
