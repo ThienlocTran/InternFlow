@@ -7,6 +7,7 @@ public record ReportEntryRequest(
         UUID userId,
         LocalDate workDate,
         String content,
-        String referenceLinks
+        String referenceLinks,
+        String sourceReferences
 ) {
 }

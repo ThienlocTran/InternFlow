@@ -3,6 +3,9 @@ package com.java6.springboot.internflow.service.impl;
 import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
+import com.java6.springboot.internflow.dto.response.AttendancePhotoChecklistItemResponse;
+import com.java6.springboot.internflow.dto.response.DailyMailReadinessItemResponse;
+import com.java6.springboot.internflow.dto.response.DailyMailReadinessResponse;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.EmailLogResponse;
 import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
@@ -10,14 +13,17 @@ import com.java6.springboot.internflow.dto.response.ReportDocumentResponse;
 import com.java6.springboot.internflow.dto.response.ReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.ReportProgressResponse;
 import com.java6.springboot.internflow.dto.response.ReportRevisionResponse;
+import com.java6.springboot.internflow.dto.response.ReportWordUploadResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.AttendanceImage;
+import com.java6.springboot.internflow.entity.AttendancePhotoRequirement;
 import com.java6.springboot.internflow.entity.EmailLog;
 import com.java6.springboot.internflow.entity.ReportDocument;
 import com.java6.springboot.internflow.entity.ReportEntry;
 import com.java6.springboot.internflow.entity.ReportRevision;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
+import com.java6.springboot.internflow.enums.AttendancePhotoRequirementStatus;
 import com.java6.springboot.internflow.enums.EmailStatus;
 import com.java6.springboot.internflow.enums.ReportEntryStatus;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
@@ -27,6 +33,7 @@ import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
+import com.java6.springboot.internflow.repository.AttendancePhotoRequirementRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.EmailLogRepository;
 import com.java6.springboot.internflow.repository.ReportDocumentRepository;
@@ -39,12 +46,17 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLDecoder;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -68,6 +80,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -77,6 +90,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private static final int DAY_SHIFT_REQUIRED_PAGES = 8;
     private static final int NIGHT_SHIFT_REQUIRED_PAGES = 5;
     private static final int WORDS_PER_PAGE_ESTIMATE = 210;
+    private static final long MAX_WORD_UPLOAD_BYTES = 10 * 1024 * 1024;
+    private static final String WORD_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    private static final Path WORD_UPLOAD_ROOT = Path.of("uploads", "report-journals");
     private static final int MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
     private static final int MAX_MAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
     private static final DateTimeFormatter SUBJECT_DATE_FORMAT = DateTimeFormatter.ofPattern("d.M.yy");
@@ -84,6 +100,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private final AppUserRepository appUserRepository;
     private final AttendanceRepository attendanceRepository;
     private final AttendanceImageRepository attendanceImageRepository;
+    private final AttendancePhotoRequirementRepository attendancePhotoRequirementRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final ReportDocumentRepository reportDocumentRepository;
     private final ReportEntryRepository reportEntryRepository;
@@ -159,6 +176,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
         entry.setContent(content);
         entry.setReferenceLinks(trimToNull(request.referenceLinks()));
+        entry.setSourceReferences(trimToNull(request.sourceReferences()));
         entry.setShiftCodes(shiftCodes(daySchedules));
         entry.setShiftCount(daySchedules.size());
         entry.setWorkTimeSummary(workTimeSummary(daySchedules));
@@ -177,6 +195,102 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 .build());
         refreshDocument(document);
         return ReportEntryResponse.from(savedEntry);
+    }
+
+    @Override
+    @Transactional
+    public ReportWordUploadResponse uploadWordEntry(AppUser user, LocalDate workDate, MultipartFile file) {
+        if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
+            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc upload nhat ky Word");
+        }
+        if (workDate == null || workDate.isAfter(LocalDate.now().plusDays(1))) {
+            throw new BusinessException("Ngay viet nhat ky khong hop le");
+        }
+        validateWordFile(file);
+        ReportDocument document = getOrCreateDocument(user);
+        List<ScheduleRegistration> daySchedules = registeredSchedules(user, workDate);
+        if (daySchedules.isEmpty()) {
+            throw new BusinessException("Ngay nay chua co ca dang ky nen chua can viet nhat ky");
+        }
+
+        WordDocumentContent wordContent = readWordDocument(file);
+        ReportEntry entry = reportEntryRepository.findByDocumentAndWorkDate(document, workDate)
+                .orElseGet(() -> ReportEntry.builder()
+                        .document(document)
+                        .workDate(workDate)
+                        .build());
+        String oldContent = entry.getContent();
+        int oldPages = entry.getPageCount();
+        int requiredPages = requiredPages(daySchedules);
+        int pageCount = wordContent.pageCount() > 0 ? wordContent.pageCount() : estimatePageCount(wordContent.text());
+
+        entry.setContent(wordContent.text());
+        entry.setShiftCodes(shiftCodes(daySchedules));
+        entry.setShiftCount(daySchedules.size());
+        entry.setWorkTimeSummary(workTimeSummary(daySchedules));
+        entry.setPageCount(pageCount);
+        entry.setRequiredPages(requiredPages);
+        entry.setStatus(pageCount >= requiredPages ? ReportEntryStatus.READY_FOR_MAIL : ReportEntryStatus.NEEDS_MORE_PAGES);
+        ReportEntry savedEntry = reportEntryRepository.save(entry);
+
+        reportRevisionRepository.save(ReportRevision.builder()
+                .entry(savedEntry)
+                .oldContent(oldContent)
+                .newContent(wordContent.text())
+                .diffSummary(diffSummary(oldContent, wordContent.text(), oldPages, pageCount))
+                .pageCountBefore(oldPages)
+                .pageCountAfter(pageCount)
+                .build());
+        saveWordFile(user, workDate, file);
+        refreshDocument(document);
+        document.setCurrentFileName(fileNameOnly(file.getOriginalFilename()));
+        reportDocumentRepository.save(document);
+        return new ReportWordUploadResponse(
+                ReportEntryResponse.from(savedEntry),
+                document.getCurrentFileName(),
+                wordDownloadUrl(user.getId(), workDate),
+                pageCount,
+                wordContent.wordCount()
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StoredWordFile downloadWordEntry(AppUser user, LocalDate workDate) {
+        if (workDate == null) {
+            throw new BusinessException("Ngay tai file Word la bat buoc");
+        }
+        ReportDocument document = reportDocumentRepository.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+        Path filePath = wordFilePath(user.getId(), workDate);
+        if (!Files.exists(filePath)) {
+            throw new NotFoundException("Khong tim thay file Word da upload");
+        }
+        try {
+            return new StoredWordFile(
+                    storedWordDisplayName(user.getId(), workDate, document.getCurrentFileName()),
+                    Files.readAllBytes(filePath),
+                    WORD_CONTENT_TYPE
+            );
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the doc file Word da upload");
+        }
+    }
+
+    private StoredWordFile storedWordFile(AppUser user, LocalDate workDate) {
+        Path filePath = wordFilePath(user.getId(), workDate);
+        if (!Files.exists(filePath)) {
+            return null;
+        }
+        try {
+            ReportDocument document = reportDocumentRepository.findByUser(user).orElse(null);
+            String fileName = document != null && StringUtils.hasText(document.getCurrentFileName())
+                    ? document.getCurrentFileName()
+                    : wordStorageFileName(workDate);
+            return new StoredWordFile(storedWordDisplayName(user.getId(), workDate, fileName), Files.readAllBytes(filePath), WORD_CONTENT_TYPE);
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the doc file Word da upload");
+        }
     }
 
     @Override
@@ -200,6 +314,116 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public DailyMailReadinessResponse getDailyMailReadiness(AppUser user, LocalDate workDate) {
+        if (workDate == null) {
+            throw new BusinessException("Ngay preview mail la bat buoc");
+        }
+
+        List<DailyMailReadinessItemResponse> checks = new ArrayList<>();
+        boolean allowedRole = user.getRole() == UserRole.INTERN || user.getRole() == UserRole.TEAM_LEADER;
+        checks.add(readinessCheck(
+                "role",
+                "Quyen gui mail",
+                allowedRole,
+                allowedRole ? List.of() : List.of("Chi sinh vien hoac nhom truong moi duoc gui mail"),
+                allowedRole ? "Tai khoan duoc gui mail" : "Tai khoan khong duoc gui mail"
+        ));
+
+        List<String> missingProfileFields = ProfileCompleteness.missingRequiredFields(user);
+        checks.add(readinessCheck(
+                "profile",
+                "Ho so sinh vien",
+                missingProfileFields.isEmpty(),
+                missingProfileFields,
+                missingProfileFields.isEmpty() ? "Ho so du thong tin" : "Thieu thong tin bat buoc"
+        ));
+
+        List<ScheduleRegistration> schedules = registeredSchedules(user, workDate);
+        checks.add(readinessCheck(
+                "schedule",
+                "Ca dang ky",
+                !schedules.isEmpty(),
+                schedules.isEmpty() ? List.of("Ngay nay chua co ca dang ky") : List.of(),
+                schedules.isEmpty() ? "Khong co ca" : shiftCodes(schedules)
+        ));
+
+        List<Attendance> attendances = attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(user, workDate);
+        List<String> missingAttendances = missingAttendanceShifts(schedules, attendances);
+        checks.add(readinessCheck(
+                "attendance",
+                "Diem danh theo ca",
+                !schedules.isEmpty() && missingAttendances.isEmpty(),
+                missingAttendances,
+                attendances.size() + "/" + schedules.size() + " ca da diem danh"
+        ));
+
+        List<AttendancePhotoRequirement> photoRequirements = attendancePhotoRequirementRepository.findChecklistByUserAndDate(user.getId(), workDate, null);
+        PhotoStats photoStats = photoStats(attendances, photoRequirements);
+        checks.add(readinessCheck(
+                "photos",
+                "Anh diem danh",
+                !schedules.isEmpty() && !attendances.isEmpty() && photoStats.missing().isEmpty(),
+                photoStats.missing(),
+                photoStats.satisfiedCount() + "/" + photoStats.requiredCount() + " anh du, " + photoStats.skippedCount() + " skipped"
+        ));
+
+        ReportDocument document = reportDocumentRepository.findByUser(user).orElse(null);
+        ReportEntry dailyEntry = document == null
+                ? null
+                : reportEntryRepository.findByDocumentAndWorkDate(document, workDate).orElse(null);
+        int requiredPages = schedules.isEmpty()
+                ? dailyEntry == null ? 0 : dailyEntry.getRequiredPages()
+                : requiredPages(schedules);
+        List<String> missingJournal = missingJournalIssues(document, dailyEntry, requiredPages);
+        boolean journalReady = missingJournal.isEmpty();
+        checks.add(readinessCheck(
+                "journal",
+                "Nhat ky ngay",
+                journalReady,
+                missingJournal,
+                dailyEntry == null ? "Chua co entry" : dailyEntry.getPageCount() + "/" + requiredPages + " trang"
+        ));
+
+        StoredWordFile storedWordFile = storedWordFile(user, workDate);
+        String attachmentName = storedWordFile != null
+                ? storedWordFile.fileName()
+                : document != null
+                        ? fileName(user, document.getCompletedShiftCount()) + ".docx"
+                        : null;
+        List<String> missingWordFile = journalReady ? List.of() : List.of("Can nhat ky du dieu kien de tao hoac dinh kem file Word");
+        checks.add(readinessCheck(
+                "wordFile",
+                "File Word",
+                missingWordFile.isEmpty(),
+                missingWordFile,
+                storedWordFile != null ? "Dung file Word da upload: " + storedWordFile.fileName() : "Se tao file Word tu nhat ky web"
+        ));
+
+        boolean ready = checks.stream().allMatch(DailyMailReadinessItemResponse::ready);
+        int completedShiftCount = document == null ? schedules.size() : document.getCompletedShiftCount();
+        String subject = user.getFullName() + ", duoc " + completedShiftCount
+                + " ca, ngay " + workDate.format(SUBJECT_DATE_FORMAT);
+        return new DailyMailReadinessResponse(
+                user.getId(),
+                workDate,
+                ready,
+                subject,
+                attachmentName,
+                shiftCodesCompact(schedules),
+                workTimeSummary(schedules),
+                schedules.size(),
+                attendances.size(),
+                photoStats.requiredCount(),
+                photoStats.satisfiedCount(),
+                photoStats.skippedCount(),
+                photoStats.missingCount(),
+                dailyEntry == null ? null : ReportEntryResponse.from(dailyEntry),
+                checks,
+                photoRequirements.stream().map(AttendancePhotoChecklistItemResponse::from).toList()
+        );
+    }
     @Override
     @Transactional
     public MailSubmitResponse submitDailyMail(AppUser user, SubmitDailyReportMailRequest request) {
@@ -243,12 +467,17 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         String subject = user.getFullName() + ", được " + completedShiftCount
                 + " ca, ngày " + request.workDate().format(SUBJECT_DATE_FORMAT);
         UploadedDocument uploadedDocument = decodeUploadedDocument(request);
+        StoredWordFile storedWordFile = uploadedDocument == null ? storedWordFile(user, request.workDate()) : null;
         String attachmentName = uploadedDocument != null
                 ? uploadedDocument.name()
-                : fileName(user, document.getCompletedShiftCount()) + ".docx";
+                : storedWordFile != null
+                        ? storedWordFile.fileName()
+                        : fileName(user, document.getCompletedShiftCount()) + ".docx";
         byte[] docxBytes = uploadedDocument != null
                 ? uploadedDocument.bytes()
-                : buildJournalDocx(document);
+                : storedWordFile != null
+                        ? storedWordFile.bytes()
+                        : buildJournalDocx(document);
         List<MailAttachment> attachments = new ArrayList<>();
         attachments.add(new MailAttachment(
                 attachmentName,
@@ -346,6 +575,101 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         reportDocumentRepository.save(document);
     }
 
+    private List<ScheduleRegistration> registeredSchedules(AppUser user, LocalDate workDate) {
+        return scheduleRegistrationRepository
+                .findByUserAndScheduleDateAndStatus(user, workDate, ScheduleRegistrationStatus.REGISTERED)
+                .stream()
+                .sorted(Comparator.comparing(item -> item.getShift().getStartTime()))
+                .toList();
+    }
+
+    private void validateWordFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("File Word la bat buoc");
+        }
+        String filename = file.getOriginalFilename();
+        if (!StringUtils.hasText(filename) || !filename.toLowerCase().endsWith(".docx")) {
+            throw new BusinessException("Chi chap nhan file .docx");
+        }
+        String contentType = file.getContentType();
+        if (StringUtils.hasText(contentType)
+                && !WORD_CONTENT_TYPE.equalsIgnoreCase(contentType)
+                && !"application/octet-stream".equalsIgnoreCase(contentType)) {
+            throw new BusinessException("Content-Type file Word khong hop le");
+        }
+        if (file.getSize() > MAX_WORD_UPLOAD_BYTES) {
+            throw new BusinessException("File Word vuot qua gioi han 10MB");
+        }
+    }
+
+    private WordDocumentContent readWordDocument(MultipartFile file) {
+        try (InputStream input = file.getInputStream(); XWPFDocument wordDocument = new XWPFDocument(input)) {
+            String text = wordDocument.getParagraphs()
+                    .stream()
+                    .map(XWPFParagraph::getText)
+                    .filter(StringUtils::hasText)
+                    .reduce((first, second) -> first + "\n" + second)
+                    .orElse("");
+            return new WordDocumentContent(text, estimatePageCount(text), countWords(text));
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the doc noi dung file Word");
+        }
+    }
+
+    private void saveWordFile(AppUser user, LocalDate workDate, MultipartFile file) {
+        try {
+            Files.createDirectories(wordUserDirectory(user.getId()));
+            try (InputStream input = file.getInputStream()) {
+                Files.copy(input, wordFilePath(user.getId(), workDate), StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.writeString(wordFileNamePath(user.getId(), workDate), fileNameOnly(file.getOriginalFilename()), StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new BusinessException("Khong the luu file Word nhat ky");
+        }
+    }
+
+    private Path wordUserDirectory(UUID userId) {
+        return WORD_UPLOAD_ROOT.resolve(userId.toString()).normalize();
+    }
+
+    private Path wordFilePath(UUID userId, LocalDate workDate) {
+        return wordUserDirectory(userId).resolve(wordStorageFileName(workDate)).normalize();
+    }
+
+    private Path wordFileNamePath(UUID userId, LocalDate workDate) {
+        return wordUserDirectory(userId).resolve(workDate + ".name").normalize();
+    }
+
+    private String storedWordDisplayName(UUID userId, LocalDate workDate, String fallback) {
+        Path namePath = wordFileNamePath(userId, workDate);
+        if (Files.exists(namePath)) {
+            try {
+                String fileName = Files.readString(namePath, StandardCharsets.UTF_8).trim();
+                if (StringUtils.hasText(fileName)) {
+                    return fileName;
+                }
+            } catch (IOException ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
+    }
+
+    private String wordStorageFileName(LocalDate workDate) {
+        return workDate + ".docx";
+    }
+
+    private String wordDownloadUrl(UUID userId, LocalDate workDate) {
+        return "/api/report-journals/entries/word?userId=" + userId + "&workDate=" + workDate;
+    }
+
+    private String fileNameOnly(String filename) {
+        if (!StringUtils.hasText(filename)) {
+            return "nhat-ky.docx";
+        }
+        return filename.replace('\\', '/').substring(filename.replace('\\', '/').lastIndexOf('/') + 1);
+    }
+
     private void sendMailWithGmailApi(
             AppUser user,
             String googleAccessToken,
@@ -421,6 +745,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 addParagraph(wordDocument, nullToEmpty(entry.getWorkTimeSummary()));
                 addParagraph(wordDocument, "Số trang ước tính: " + entry.getPageCount() + "/" + entry.getRequiredPages());
                 addParagraph(wordDocument, "Tài liệu tham khảo: " + nullToEmpty(entry.getReferenceLinks()));
+                addParagraph(wordDocument, "Nguon trich dan: " + nullToEmpty(entry.getSourceReferences()));
                 addParagraph(wordDocument, nullToEmpty(entry.getContent()));
                 addParagraph(wordDocument, "");
             });
@@ -432,6 +757,105 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         }
     }
 
+    private DailyMailReadinessItemResponse readinessCheck(
+            String code,
+            String label,
+            boolean ready,
+            List<String> missing,
+            String detail
+    ) {
+        return new DailyMailReadinessItemResponse(
+                code,
+                label,
+                ready,
+                ready ? "READY" : "MISSING",
+                List.copyOf(missing),
+                detail
+        );
+    }
+
+    private List<String> missingAttendanceShifts(List<ScheduleRegistration> schedules, List<Attendance> attendances) {
+        if (schedules.isEmpty()) {
+            return List.of();
+        }
+        List<String> missing = new ArrayList<>();
+        for (ScheduleRegistration schedule : schedules) {
+            boolean hasAttendance = attendances.stream()
+                    .anyMatch(attendance -> attendance.getShift().getId().equals(schedule.getShift().getId()));
+            if (!hasAttendance) {
+                missing.add(schedule.getShift().getName() + ": chua check-in");
+            }
+        }
+        return List.copyOf(missing);
+    }
+
+    private List<String> missingJournalIssues(ReportDocument document, ReportEntry dailyEntry, int requiredPages) {
+        List<String> missing = new ArrayList<>();
+        if (document == null) {
+            missing.add("Sinh vien chua co nhat ky thuc tap");
+        }
+        if (dailyEntry == null) {
+            missing.add("Ngay nay chua co noi dung nhat ky");
+            return List.copyOf(missing);
+        }
+        if (!StringUtils.hasText(dailyEntry.getContent())) {
+            missing.add("Nhat ky ngay nay chua co noi dung");
+        }
+        if (dailyEntry.getPageCount() < requiredPages) {
+            missing.add("Nhat ky chua du " + requiredPages + " trang yeu cau");
+        }
+        if (!StringUtils.hasText(dailyEntry.getSourceReferences())) {
+            missing.add("Thieu nguon trich dan theo ca");
+        }
+        return List.copyOf(missing);
+    }
+
+    private PhotoStats photoStats(List<Attendance> attendances, List<AttendancePhotoRequirement> requirements) {
+        List<String> missing = new ArrayList<>();
+        int requiredCount = 0;
+        int satisfiedCount = 0;
+        int skippedCount = 0;
+        if (attendances.isEmpty()) {
+            missing.add("Chua co attendance de gom anh");
+        }
+        for (Attendance attendance : attendances) {
+            String shiftName = attendance.getShift().getName();
+            requiredCount++;
+            if (StringUtils.hasText(attendance.getCheckinTimemarkImageUrl())) {
+                satisfiedCount++;
+            } else {
+                missing.add(shiftName + ": thieu TimeMark dau gio");
+            }
+            requiredCount++;
+            if (StringUtils.hasText(attendance.getCheckoutTimemarkImageUrl())) {
+                satisfiedCount++;
+            } else {
+                missing.add(shiftName + ": thieu TimeMark cuoi ca");
+            }
+        }
+        for (AttendancePhotoRequirement requirement : requirements) {
+            if (!requirement.isRequired()) {
+                continue;
+            }
+            requiredCount++;
+            if (requirement.getStatus() == AttendancePhotoRequirementStatus.SATISFIED) {
+                satisfiedCount++;
+            } else if (requirement.getStatus() == AttendancePhotoRequirementStatus.SKIPPED) {
+                skippedCount++;
+            } else {
+                missing.add(requirementPhotoLabel(requirement));
+            }
+        }
+        return new PhotoStats(requiredCount, satisfiedCount, skippedCount, missing.size(), List.copyOf(missing));
+    }
+
+    private String requirementPhotoLabel(AttendancePhotoRequirement requirement) {
+        return requirement.getAttendance().getShift().getName()
+                + ": thieu "
+                + requirement.getImageType().name()
+                + " "
+                + formatTime(requirement.getExpectedTime());
+    }
     private String buildMailBody(
             AppUser user,
             ReportEntry dailyEntry,
@@ -459,6 +883,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         body.append("\nBáo cáo ngày: ").append(dailyEntry.getPageCount())
                 .append('/').append(dailyEntry.getRequiredPages()).append(" trang ước tính\n");
         body.append("Tài liệu tham khảo theo ca: ").append(nullToEmpty(dailyEntry.getReferenceLinks())).append('\n');
+        body.append("Nguon trich dan theo ca: ").append(nullToEmpty(dailyEntry.getSourceReferences())).append('\n');
         body.append("\nFile Word nhật ký thực tập được đính kèm trong mail này.\n");
         return body.toString();
     }
@@ -639,6 +1064,10 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         return Math.max(1, (int) Math.ceil(words / (double) WORDS_PER_PAGE_ESTIMATE));
     }
 
+    private int countWords(String content) {
+        return StringUtils.hasText(content) ? content.trim().split("\\s+").length : 0;
+    }
+
     private String diffSummary(String oldContent, String newContent, int oldPages, int newPages) {
         int oldWords = StringUtils.hasText(oldContent) ? oldContent.trim().split("\\s+").length : 0;
         int newWords = StringUtils.hasText(newContent) ? newContent.trim().split("\\s+").length : 0;
@@ -685,6 +1114,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
+    private record PhotoStats(int requiredCount, int satisfiedCount, int skippedCount, int missingCount, List<String> missing) {
+    }
+
     private record MailAttachment(String name, byte[] bytes, String contentType) {
     }
 
@@ -692,5 +1124,8 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     }
 
     private record UploadedDocument(String name, byte[] bytes) {
+    }
+
+    private record WordDocumentContent(String text, int pageCount, int wordCount) {
     }
 }

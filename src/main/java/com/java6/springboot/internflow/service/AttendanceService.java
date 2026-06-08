@@ -3,7 +3,9 @@ package com.java6.springboot.internflow.service;
 import com.java6.springboot.internflow.dto.request.CheckinRequest;
 import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.request.AttendanceImageRequest;
+import com.java6.springboot.internflow.dto.request.AttendancePhotoSkipRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
+import com.java6.springboot.internflow.dto.response.AttendancePhotoChecklistItemResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import java.time.LocalDate;
@@ -20,7 +22,11 @@ public interface AttendanceService {
 
     List<AttendanceResponse> getUserAttendances(AppUser user, LocalDate date);
 
+    List<AttendancePhotoChecklistItemResponse> getPhotoChecklist(AppUser currentUser, UUID userId, UUID shiftId, LocalDate date);
+
     AttendanceImageResponse addImage(AppUser currentUser, UUID attendanceId, AttendanceImageRequest request);
+
+    AttendancePhotoChecklistItemResponse skipGroupRequirement(AppUser currentUser, UUID attendanceId, UUID requirementId, AttendancePhotoSkipRequest request);
 
     List<AttendanceImageResponse> getImages(AppUser currentUser, UUID attendanceId);
 }

@@ -4,12 +4,14 @@ import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
+import com.java6.springboot.internflow.dto.response.DailyMailReadinessResponse;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.EmailLogResponse;
 import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
 import com.java6.springboot.internflow.dto.response.ReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.ReportProgressResponse;
 import com.java6.springboot.internflow.dto.response.ReportRevisionResponse;
+import com.java6.springboot.internflow.dto.response.ReportWordUploadResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.security.CurrentUserService;
 import com.java6.springboot.internflow.service.ReportJournalService;
@@ -18,6 +20,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -26,6 +33,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/report-journals")
@@ -65,6 +74,34 @@ public class ReportJournalController {
         return ApiResponse.ok("Luu nhat ky thanh cong", reportJournalService.saveEntry(currentUser, request));
     }
 
+    @PostMapping(value = "/entries/word", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<ReportWordUploadResponse> uploadWordEntry(
+            HttpServletRequest httpRequest,
+            @RequestParam UUID userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workDate,
+            @RequestPart("file") MultipartFile file
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        currentUserService.rejectMismatchedRequestUser(currentUser, userId);
+        return ApiResponse.ok("Upload file Word nhat ky thanh cong", reportJournalService.uploadWordEntry(currentUser, workDate, file));
+    }
+
+    @GetMapping("/entries/word")
+    public ResponseEntity<ByteArrayResource> downloadWordEntry(
+            HttpServletRequest httpRequest,
+            @RequestParam(required = false) UUID userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workDate
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        AppUser targetUser = currentUserService.resolveRequestedUser(currentUser, userId);
+        ReportJournalService.StoredWordFile file = reportJournalService.downloadWordEntry(targetUser, workDate);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.fileName() + "\"")
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .contentLength(file.bytes().length)
+                .body(new ByteArrayResource(file.bytes()));
+    }
+
     @GetMapping("/entries/{entryId}/revisions")
     public ApiResponse<List<ReportRevisionResponse>> getRevisions(
             HttpServletRequest httpRequest,
@@ -74,6 +111,16 @@ public class ReportJournalController {
         return ApiResponse.ok("Lay lich su sua nhat ky thanh cong", reportJournalService.getRevisions(currentUser, entryId));
     }
 
+    @GetMapping("/daily-mail-preview")
+    public ApiResponse<DailyMailReadinessResponse> getDailyMailPreview(
+            HttpServletRequest httpRequest,
+            @RequestParam(required = false) UUID userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workDate
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        AppUser targetUser = currentUserService.resolveRequestedUser(currentUser, userId);
+        return ApiResponse.ok("Kiem tra du lieu mail cuoi ngay thanh cong", reportJournalService.getDailyMailReadiness(targetUser, workDate));
+    }
     @PostMapping("/submit-mail")
     public ApiResponse<MailSubmitResponse> submitDailyMail(
             HttpServletRequest httpRequest,
