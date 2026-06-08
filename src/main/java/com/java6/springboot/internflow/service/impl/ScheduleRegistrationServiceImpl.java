@@ -22,6 +22,8 @@ import com.java6.springboot.internflow.service.ScheduleRegistrationService;
 import java.time.temporal.ChronoUnit;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +37,10 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
+    private static final int TEAM_LEADER_DEFAULT_DAILY_LIMIT = 3;
+    private static final int TEAM_LEADER_MAKEUP_DAILY_LIMIT = 4;
 
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AppUserRepository appUserRepository;
@@ -60,12 +66,13 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                 .sorted(Comparator.comparingInt(this::shiftOrder).thenComparing(Shift::getStartTime))
                 .toList();
 
-        long existingCount = scheduleRegistrationRepository.countByUserAndScheduleDateAndStatus(
+        List<ScheduleRegistration> existingRegistrations = scheduleRegistrationRepository.findByUserAndScheduleDateAndStatus(
                 user,
                 request.scheduleDate(),
                 ScheduleRegistrationStatus.REGISTERED
         );
-        if (existingCount + shifts.size() > policy.getMaxShiftsPerDay()) {
+        int dailyLimit = effectiveDailyLimit(user, policy, request.scheduleDate());
+        if (existingRegistrations.size() + shifts.size() > dailyLimit) {
             throw new BusinessException("Vuot so ca toi da trong ngay");
         }
         LocalDate cumulativeQuotaStart = resolveQuotaStartDate(user, request.scheduleDate());
@@ -80,7 +87,10 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (policy.getTargetShiftsPerWeek() > 0 && cumulativeCount + shifts.size() > cumulativeLimit) {
             throw new BusinessException("Vuot quota tich luy den het tuan nay (" + cumulativeLimit + " ca)");
         }
-        if (!isAdjacent(shifts)) {
+        LinkedHashMap<UUID, Shift> combinedShifts = new LinkedHashMap<>();
+        existingRegistrations.forEach(registration -> combinedShifts.put(registration.getShift().getId(), registration.getShift()));
+        shifts.forEach(shift -> combinedShifts.put(shift.getId(), shift));
+        if (!isAdjacent(combinedShifts.values().stream().toList())) {
             throw new BusinessException("Cac ca trong ngay phai lien ke theo thu tu ca");
         }
 
@@ -142,8 +152,12 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (!registration.getUser().getId().equals(currentUser.getId())) {
             throw new ForbiddenException("Ban khong co quyen roi ca cua user khac");
         }
-        if (registration.getScheduleDate().isBefore(LocalDate.now())) {
-            throw new BusinessException("Ca da qua ngay nen khong the roi ca");
+        LocalDateTime shiftStart = LocalDateTime.of(
+                registration.getScheduleDate(),
+                registration.getShift().getStartTime()
+        );
+        if (!LocalDateTime.now(BUSINESS_ZONE).isBefore(shiftStart)) {
+            throw new BusinessException("Da den gio bat dau ca nen khong the roi ca");
         }
         boolean attendanceStarted = attendanceRepository.findByUserAndShiftAndAttendanceDate(
                 registration.getUser(),
@@ -283,5 +297,32 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         }
         long weeksElapsed = ChronoUnit.WEEKS.between(quotaStartDate, scheduleDate) + 1;
         return Math.toIntExact(weeksElapsed * policy.getTargetShiftsPerWeek());
+    }
+
+    private int effectiveDailyLimit(AppUser user, RolePolicy policy, LocalDate scheduleDate) {
+        if (user.getRole() != UserRole.TEAM_LEADER || policy.getTargetShiftsPerWeek() <= 0) {
+            return policy.getMaxShiftsPerDay();
+        }
+        int defaultLimit = Math.max(policy.getMaxShiftsPerDay(), TEAM_LEADER_DEFAULT_DAILY_LIMIT);
+        return hasMakeupQuota(user, policy, scheduleDate)
+                ? Math.max(defaultLimit, TEAM_LEADER_MAKEUP_DAILY_LIMIT)
+                : defaultLimit;
+    }
+
+    private boolean hasMakeupQuota(AppUser user, RolePolicy policy, LocalDate scheduleDate) {
+        LocalDate quotaStart = resolveQuotaStartDate(user, scheduleDate);
+        LocalDate currentWeekStart = scheduleDate.with(DayOfWeek.MONDAY);
+        LocalDate previousWeekEnd = currentWeekStart.minusDays(1);
+        if (quotaStart.isAfter(previousWeekEnd)) {
+            return false;
+        }
+        long actualBeforeWeek = scheduleRegistrationRepository.countByUserAndScheduleDateBetweenAndStatus(
+                user,
+                quotaStart,
+                previousWeekEnd,
+                ScheduleRegistrationStatus.REGISTERED
+        );
+        long expectedBeforeWeek = ChronoUnit.WEEKS.between(quotaStart, currentWeekStart) * policy.getTargetShiftsPerWeek();
+        return actualBeforeWeek < expectedBeforeWeek;
     }
 }

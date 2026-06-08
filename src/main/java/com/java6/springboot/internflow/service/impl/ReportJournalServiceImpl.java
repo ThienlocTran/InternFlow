@@ -451,11 +451,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         attendances.forEach(attendance -> {
             body.append("- ").append(attendance.getShift().getName()).append(":\n");
             appendUrl(body, "  TimeMark đầu giờ", attendance.getCheckinTimemarkImageUrl());
-            appendUrl(body, "  Ảnh nhóm đầu giờ", attendance.getCheckinGroupImageUrl());
             attendanceImageRepository.findByAttendanceIdOrderByExpectedTimeAscDisplayOrderAsc(attendance.getId())
                     .forEach(image -> appendUrl(body, "  " + imageLabel(image), image.getImageUrl()));
             appendUrl(body, "  TimeMark cuối ca", attendance.getCheckoutTimemarkImageUrl());
-            appendUrl(body, "  Ảnh nhóm cuối ca", attendance.getCheckoutGroupImageUrl());
         });
 
         body.append("\nBáo cáo ngày: ").append(dailyEntry.getPageCount())
@@ -517,7 +515,6 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         Map<String, String> images = new LinkedHashMap<>();
         String shiftName = sanitizeFilePart(attendance.getShift().getName());
         putImage(images, shiftName + "_TimeMark_dau_gio.jpg", attendance.getCheckinTimemarkImageUrl());
-        putImage(images, shiftName + "_Anh_nhom_dau_gio.jpg", attendance.getCheckinGroupImageUrl());
         attendanceImageRepository.findByAttendanceIdOrderByExpectedTimeAscDisplayOrderAsc(attendance.getId())
                 .forEach(image -> putImage(
                         images,
@@ -525,7 +522,6 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                         image.getImageUrl()
                 ));
         putImage(images, shiftName + "_TimeMark_cuoi_ca.jpg", attendance.getCheckoutTimemarkImageUrl());
-        putImage(images, shiftName + "_Anh_nhom_cuoi_ca.jpg", attendance.getCheckoutGroupImageUrl());
         return images;
     }
 
