@@ -1,6 +1,7 @@
 package com.java6.springboot.internflow.service.impl;
 
 import com.java6.springboot.internflow.dto.request.AttendanceImageRequest;
+import com.java6.springboot.internflow.dto.request.AttendancePhotoSkipRequest;
 import com.java6.springboot.internflow.dto.request.CheckinRequest;
 import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
@@ -14,6 +15,7 @@ import com.java6.springboot.internflow.entity.RolePolicy;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
+import com.java6.springboot.internflow.enums.AttendanceImageType;
 import com.java6.springboot.internflow.enums.AttendancePhotoRequirementStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
@@ -236,6 +238,40 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
+    @Transactional
+    public AttendancePhotoChecklistItemResponse skipGroupRequirement(AppUser currentUser, UUID attendanceId, UUID requirementId, AttendancePhotoSkipRequest request) {
+        if (attendanceId == null) {
+            throw new BusinessException("Attendance id la bat buoc");
+        }
+        if (requirementId == null) {
+            throw new BusinessException("Moc anh la bat buoc");
+        }
+        if (request == null || !StringUtils.hasText(request.reason())) {
+            throw new BusinessException("Ly do bo qua anh nhom la bat buoc");
+        }
+        Attendance attendance = findAttendance(attendanceId);
+        assertOwner(currentUser, attendance);
+        AttendancePhotoRequirement requirement = attendancePhotoRequirementRepository.findById(requirementId)
+                .orElseThrow(() -> new NotFoundException("Khong tim thay moc anh diem danh"));
+        if (!requirement.getAttendance().getId().equals(attendance.getId())) {
+            throw new ForbiddenException("Moc anh khong thuoc attendance nay");
+        }
+        if (requirement.getImageType() != AttendanceImageType.GROUP) {
+            throw new BusinessException("Chi duoc bo qua anh nhom");
+        }
+        if (requirement.getAttendanceImage() != null || requirement.getStatus() == AttendancePhotoRequirementStatus.SATISFIED) {
+            throw new BusinessException("Moc anh nhom da co anh, khong can bo qua");
+        }
+        if (!isAloneInShift(attendance)) {
+            throw new BusinessException("Chi duoc bo qua anh nhom khi ban di mot minh trong ca nay");
+        }
+
+        requirement.setStatus(AttendancePhotoRequirementStatus.SKIPPED);
+        requirement.setSkipReason(request.reason().trim());
+        return AttendancePhotoChecklistItemResponse.from(attendancePhotoRequirementRepository.save(requirement));
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<AttendanceImageResponse> getImages(AppUser currentUser, UUID attendanceId) {
         if (attendanceId == null) {
@@ -336,6 +372,20 @@ public class AttendanceServiceImpl implements AttendanceService {
             throw new BusinessException("Moc thoi gian anh khong khop voi checklist");
         }
         return requirement;
+    }
+
+    private boolean isAloneInShift(Attendance attendance) {
+        long participantCount = scheduleRegistrationRepository
+                .findByShiftAndScheduleDateAndStatusOrderByUser_FullNameAsc(
+                        attendance.getShift(),
+                        attendance.getAttendanceDate(),
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .stream()
+                .map(registration -> registration.getUser().getId())
+                .distinct()
+                .count();
+        return participantCount <= 1;
     }
 
     private void assertOwner(AppUser currentUser, Attendance attendance) {

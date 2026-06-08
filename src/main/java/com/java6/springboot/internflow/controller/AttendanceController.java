@@ -2,6 +2,7 @@ package com.java6.springboot.internflow.controller;
 
 import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.request.AttendanceImageRequest;
+import com.java6.springboot.internflow.dto.request.AttendancePhotoSkipRequest;
 import com.java6.springboot.internflow.dto.request.CheckinRequest;
 import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
@@ -17,6 +18,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -103,6 +105,17 @@ public class AttendanceController {
     ) {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
         return ApiResponse.ok("Them anh diem danh thanh cong", attendanceService.addImage(currentUser, attendanceId, withRequirementId(request, requirementId)));
+    }
+
+    @PatchMapping("/{attendanceId}/requirements/{requirementId}/skip")
+    public ApiResponse<AttendancePhotoChecklistItemResponse> skipGroupRequirement(
+            @PathVariable UUID attendanceId,
+            @PathVariable UUID requirementId,
+            HttpServletRequest httpRequest,
+            @RequestBody AttendancePhotoSkipRequest request
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        return ApiResponse.ok("Bo qua anh nhom thanh cong", attendanceService.skipGroupRequirement(currentUser, attendanceId, requirementId, request));
     }
 
     @GetMapping("/{attendanceId}/images")
