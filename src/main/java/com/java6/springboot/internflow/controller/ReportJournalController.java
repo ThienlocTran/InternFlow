@@ -4,6 +4,7 @@ import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
+import com.java6.springboot.internflow.dto.response.DailyMailReadinessResponse;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.EmailLogResponse;
 import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
@@ -110,6 +111,16 @@ public class ReportJournalController {
         return ApiResponse.ok("Lay lich su sua nhat ky thanh cong", reportJournalService.getRevisions(currentUser, entryId));
     }
 
+    @GetMapping("/daily-mail-preview")
+    public ApiResponse<DailyMailReadinessResponse> getDailyMailPreview(
+            HttpServletRequest httpRequest,
+            @RequestParam(required = false) UUID userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workDate
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        AppUser targetUser = currentUserService.resolveRequestedUser(currentUser, userId);
+        return ApiResponse.ok("Kiem tra du lieu mail cuoi ngay thanh cong", reportJournalService.getDailyMailReadiness(targetUser, workDate));
+    }
     @PostMapping("/submit-mail")
     public ApiResponse<MailSubmitResponse> submitDailyMail(
             HttpServletRequest httpRequest,

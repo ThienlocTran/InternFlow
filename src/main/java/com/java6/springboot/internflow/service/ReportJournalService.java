@@ -3,6 +3,7 @@ package com.java6.springboot.internflow.service;
 import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
+import com.java6.springboot.internflow.dto.response.DailyMailReadinessResponse;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.EmailLogResponse;
 import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
@@ -29,6 +30,8 @@ public interface ReportJournalService {
     StoredWordFile downloadWordEntry(AppUser currentUser, LocalDate workDate);
 
     List<ReportRevisionResponse> getRevisions(AppUser currentUser, UUID entryId);
+
+    DailyMailReadinessResponse getDailyMailReadiness(AppUser currentUser, LocalDate workDate);
 
     MailSubmitResponse submitDailyMail(AppUser currentUser, SubmitDailyReportMailRequest request);
 

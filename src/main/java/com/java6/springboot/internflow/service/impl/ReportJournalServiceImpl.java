@@ -3,6 +3,9 @@ package com.java6.springboot.internflow.service.impl;
 import com.java6.springboot.internflow.dto.request.ConfirmDailyReportMailRequest;
 import com.java6.springboot.internflow.dto.request.ReportEntryRequest;
 import com.java6.springboot.internflow.dto.request.SubmitDailyReportMailRequest;
+import com.java6.springboot.internflow.dto.response.AttendancePhotoChecklistItemResponse;
+import com.java6.springboot.internflow.dto.response.DailyMailReadinessItemResponse;
+import com.java6.springboot.internflow.dto.response.DailyMailReadinessResponse;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
 import com.java6.springboot.internflow.dto.response.EmailLogResponse;
 import com.java6.springboot.internflow.dto.response.MailSubmitResponse;
@@ -14,11 +17,13 @@ import com.java6.springboot.internflow.dto.response.ReportWordUploadResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.AttendanceImage;
+import com.java6.springboot.internflow.entity.AttendancePhotoRequirement;
 import com.java6.springboot.internflow.entity.EmailLog;
 import com.java6.springboot.internflow.entity.ReportDocument;
 import com.java6.springboot.internflow.entity.ReportEntry;
 import com.java6.springboot.internflow.entity.ReportRevision;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
+import com.java6.springboot.internflow.enums.AttendancePhotoRequirementStatus;
 import com.java6.springboot.internflow.enums.EmailStatus;
 import com.java6.springboot.internflow.enums.ReportEntryStatus;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
@@ -28,6 +33,7 @@ import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
+import com.java6.springboot.internflow.repository.AttendancePhotoRequirementRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.EmailLogRepository;
 import com.java6.springboot.internflow.repository.ReportDocumentRepository;
@@ -94,6 +100,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private final AppUserRepository appUserRepository;
     private final AttendanceRepository attendanceRepository;
     private final AttendanceImageRepository attendanceImageRepository;
+    private final AttendancePhotoRequirementRepository attendancePhotoRequirementRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final ReportDocumentRepository reportDocumentRepository;
     private final ReportEntryRepository reportEntryRepository;
@@ -307,6 +314,116 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public DailyMailReadinessResponse getDailyMailReadiness(AppUser user, LocalDate workDate) {
+        if (workDate == null) {
+            throw new BusinessException("Ngay preview mail la bat buoc");
+        }
+
+        List<DailyMailReadinessItemResponse> checks = new ArrayList<>();
+        boolean allowedRole = user.getRole() == UserRole.INTERN || user.getRole() == UserRole.TEAM_LEADER;
+        checks.add(readinessCheck(
+                "role",
+                "Quyen gui mail",
+                allowedRole,
+                allowedRole ? List.of() : List.of("Chi sinh vien hoac nhom truong moi duoc gui mail"),
+                allowedRole ? "Tai khoan duoc gui mail" : "Tai khoan khong duoc gui mail"
+        ));
+
+        List<String> missingProfileFields = ProfileCompleteness.missingRequiredFields(user);
+        checks.add(readinessCheck(
+                "profile",
+                "Ho so sinh vien",
+                missingProfileFields.isEmpty(),
+                missingProfileFields,
+                missingProfileFields.isEmpty() ? "Ho so du thong tin" : "Thieu thong tin bat buoc"
+        ));
+
+        List<ScheduleRegistration> schedules = registeredSchedules(user, workDate);
+        checks.add(readinessCheck(
+                "schedule",
+                "Ca dang ky",
+                !schedules.isEmpty(),
+                schedules.isEmpty() ? List.of("Ngay nay chua co ca dang ky") : List.of(),
+                schedules.isEmpty() ? "Khong co ca" : shiftCodes(schedules)
+        ));
+
+        List<Attendance> attendances = attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(user, workDate);
+        List<String> missingAttendances = missingAttendanceShifts(schedules, attendances);
+        checks.add(readinessCheck(
+                "attendance",
+                "Diem danh theo ca",
+                !schedules.isEmpty() && missingAttendances.isEmpty(),
+                missingAttendances,
+                attendances.size() + "/" + schedules.size() + " ca da diem danh"
+        ));
+
+        List<AttendancePhotoRequirement> photoRequirements = attendancePhotoRequirementRepository.findChecklistByUserAndDate(user.getId(), workDate, null);
+        PhotoStats photoStats = photoStats(attendances, photoRequirements);
+        checks.add(readinessCheck(
+                "photos",
+                "Anh diem danh",
+                !schedules.isEmpty() && !attendances.isEmpty() && photoStats.missing().isEmpty(),
+                photoStats.missing(),
+                photoStats.satisfiedCount() + "/" + photoStats.requiredCount() + " anh du, " + photoStats.skippedCount() + " skipped"
+        ));
+
+        ReportDocument document = reportDocumentRepository.findByUser(user).orElse(null);
+        ReportEntry dailyEntry = document == null
+                ? null
+                : reportEntryRepository.findByDocumentAndWorkDate(document, workDate).orElse(null);
+        int requiredPages = schedules.isEmpty()
+                ? dailyEntry == null ? 0 : dailyEntry.getRequiredPages()
+                : requiredPages(schedules);
+        List<String> missingJournal = missingJournalIssues(document, dailyEntry, requiredPages);
+        boolean journalReady = missingJournal.isEmpty();
+        checks.add(readinessCheck(
+                "journal",
+                "Nhat ky ngay",
+                journalReady,
+                missingJournal,
+                dailyEntry == null ? "Chua co entry" : dailyEntry.getPageCount() + "/" + requiredPages + " trang"
+        ));
+
+        StoredWordFile storedWordFile = storedWordFile(user, workDate);
+        String attachmentName = storedWordFile != null
+                ? storedWordFile.fileName()
+                : document != null
+                        ? fileName(user, document.getCompletedShiftCount()) + ".docx"
+                        : null;
+        List<String> missingWordFile = journalReady ? List.of() : List.of("Can nhat ky du dieu kien de tao hoac dinh kem file Word");
+        checks.add(readinessCheck(
+                "wordFile",
+                "File Word",
+                missingWordFile.isEmpty(),
+                missingWordFile,
+                storedWordFile != null ? "Dung file Word da upload: " + storedWordFile.fileName() : "Se tao file Word tu nhat ky web"
+        ));
+
+        boolean ready = checks.stream().allMatch(DailyMailReadinessItemResponse::ready);
+        int completedShiftCount = document == null ? schedules.size() : document.getCompletedShiftCount();
+        String subject = user.getFullName() + ", duoc " + completedShiftCount
+                + " ca, ngay " + workDate.format(SUBJECT_DATE_FORMAT);
+        return new DailyMailReadinessResponse(
+                user.getId(),
+                workDate,
+                ready,
+                subject,
+                attachmentName,
+                shiftCodesCompact(schedules),
+                workTimeSummary(schedules),
+                schedules.size(),
+                attendances.size(),
+                photoStats.requiredCount(),
+                photoStats.satisfiedCount(),
+                photoStats.skippedCount(),
+                photoStats.missingCount(),
+                dailyEntry == null ? null : ReportEntryResponse.from(dailyEntry),
+                checks,
+                photoRequirements.stream().map(AttendancePhotoChecklistItemResponse::from).toList()
+        );
+    }
     @Override
     @Transactional
     public MailSubmitResponse submitDailyMail(AppUser user, SubmitDailyReportMailRequest request) {
@@ -640,6 +757,105 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         }
     }
 
+    private DailyMailReadinessItemResponse readinessCheck(
+            String code,
+            String label,
+            boolean ready,
+            List<String> missing,
+            String detail
+    ) {
+        return new DailyMailReadinessItemResponse(
+                code,
+                label,
+                ready,
+                ready ? "READY" : "MISSING",
+                List.copyOf(missing),
+                detail
+        );
+    }
+
+    private List<String> missingAttendanceShifts(List<ScheduleRegistration> schedules, List<Attendance> attendances) {
+        if (schedules.isEmpty()) {
+            return List.of();
+        }
+        List<String> missing = new ArrayList<>();
+        for (ScheduleRegistration schedule : schedules) {
+            boolean hasAttendance = attendances.stream()
+                    .anyMatch(attendance -> attendance.getShift().getId().equals(schedule.getShift().getId()));
+            if (!hasAttendance) {
+                missing.add(schedule.getShift().getName() + ": chua check-in");
+            }
+        }
+        return List.copyOf(missing);
+    }
+
+    private List<String> missingJournalIssues(ReportDocument document, ReportEntry dailyEntry, int requiredPages) {
+        List<String> missing = new ArrayList<>();
+        if (document == null) {
+            missing.add("Sinh vien chua co nhat ky thuc tap");
+        }
+        if (dailyEntry == null) {
+            missing.add("Ngay nay chua co noi dung nhat ky");
+            return List.copyOf(missing);
+        }
+        if (!StringUtils.hasText(dailyEntry.getContent())) {
+            missing.add("Nhat ky ngay nay chua co noi dung");
+        }
+        if (dailyEntry.getPageCount() < requiredPages) {
+            missing.add("Nhat ky chua du " + requiredPages + " trang yeu cau");
+        }
+        if (!StringUtils.hasText(dailyEntry.getSourceReferences())) {
+            missing.add("Thieu nguon trich dan theo ca");
+        }
+        return List.copyOf(missing);
+    }
+
+    private PhotoStats photoStats(List<Attendance> attendances, List<AttendancePhotoRequirement> requirements) {
+        List<String> missing = new ArrayList<>();
+        int requiredCount = 0;
+        int satisfiedCount = 0;
+        int skippedCount = 0;
+        if (attendances.isEmpty()) {
+            missing.add("Chua co attendance de gom anh");
+        }
+        for (Attendance attendance : attendances) {
+            String shiftName = attendance.getShift().getName();
+            requiredCount++;
+            if (StringUtils.hasText(attendance.getCheckinTimemarkImageUrl())) {
+                satisfiedCount++;
+            } else {
+                missing.add(shiftName + ": thieu TimeMark dau gio");
+            }
+            requiredCount++;
+            if (StringUtils.hasText(attendance.getCheckoutTimemarkImageUrl())) {
+                satisfiedCount++;
+            } else {
+                missing.add(shiftName + ": thieu TimeMark cuoi ca");
+            }
+        }
+        for (AttendancePhotoRequirement requirement : requirements) {
+            if (!requirement.isRequired()) {
+                continue;
+            }
+            requiredCount++;
+            if (requirement.getStatus() == AttendancePhotoRequirementStatus.SATISFIED) {
+                satisfiedCount++;
+            } else if (requirement.getStatus() == AttendancePhotoRequirementStatus.SKIPPED) {
+                skippedCount++;
+            } else {
+                missing.add(requirementPhotoLabel(requirement));
+            }
+        }
+        return new PhotoStats(requiredCount, satisfiedCount, skippedCount, missing.size(), List.copyOf(missing));
+    }
+
+    private String requirementPhotoLabel(AttendancePhotoRequirement requirement) {
+        return requirement.getAttendance().getShift().getName()
+                + ": thieu "
+                + requirement.getImageType().name()
+                + " "
+                + formatTime(requirement.getExpectedTime());
+    }
     private String buildMailBody(
             AppUser user,
             ReportEntry dailyEntry,
@@ -896,6 +1112,9 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private record PhotoStats(int requiredCount, int satisfiedCount, int skippedCount, int missingCount, List<String> missing) {
     }
 
     private record MailAttachment(String name, byte[] bytes, String contentType) {
