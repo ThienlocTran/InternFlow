@@ -11,6 +11,15 @@ Click "Add Environment Variable" và paste từng cặp NAME/VALUE dưới đây
 NAME: SPRING_PROFILES_ACTIVE
 VALUE: production
 
+NAME: SPRING_JPA_HIBERNATE_DDL_AUTO
+VALUE: validate
+
+NAME: KEEP_ALIVE_ENDPOINT
+VALUE: /api/health/live
+
+NAME: KEEP_ALIVE_ENABLED
+VALUE: true
+
 -------------------------------------------
 2. Database (Neon.tech)
 -------------------------------------------

@@ -38,6 +38,9 @@ Mở file `.env.render` và thêm từng biến:
 
 ```
 SPRING_PROFILES_ACTIVE=production
+SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+KEEP_ALIVE_ENDPOINT=/api/health/live
+KEEP_ALIVE_ENABLED=true
 DATABASE_URL=jdbc:postgresql://ep-nameless-unit-aowa4mmg-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require
 DATABASE_USERNAME=neondb_owner
 DATABASE_PASSWORD=npg_6ZnjCYkRUFS0

@@ -21,6 +21,7 @@ import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.ShiftRepository;
+import com.java6.springboot.internflow.service.AttendancePhotoRequirementService;
 import com.java6.springboot.internflow.service.AttendanceService;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import java.time.Instant;
@@ -47,6 +48,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final RolePolicyRepository rolePolicyRepository;
     private final AttendanceImageRepository attendanceImageRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
+    private final AttendancePhotoRequirementService attendancePhotoRequirementService;
 
     @Override
     @Transactional
@@ -97,7 +99,9 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .note(trimToNull(request.note()))
                 .build();
 
-        return AttendanceResponse.from(attendanceRepository.save(attendance));
+        Attendance savedAttendance = attendanceRepository.save(attendance);
+        attendancePhotoRequirementService.createForAttendance(savedAttendance);
+        return AttendanceResponse.from(savedAttendance);
     }
 
     @Override
@@ -205,7 +209,10 @@ public class AttendanceServiceImpl implements AttendanceService {
         image.setDisplayOrder(request.displayOrder() == null ? 0 : request.displayOrder());
         image.setNote(trimToNull(request.note()));
 
-        return AttendanceImageResponse.from(attendanceImageRepository.save(image));
+        AttendanceImage savedImage = attendanceImageRepository.save(image);
+        attendancePhotoRequirementService.createForAttendance(attendance);
+        attendancePhotoRequirementService.linkImage(savedImage);
+        return AttendanceImageResponse.from(savedImage);
     }
 
     @Override

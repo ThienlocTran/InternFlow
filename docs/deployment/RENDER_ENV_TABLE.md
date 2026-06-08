@@ -5,6 +5,9 @@
 | # | NAME | VALUE |
 |---|------|-------|
 | 1 | `SPRING_PROFILES_ACTIVE` | `production` |
+| required | `SPRING_JPA_HIBERNATE_DDL_AUTO` | `validate` |
+| required | `KEEP_ALIVE_ENDPOINT` | `/api/health/live` |
+| required | `KEEP_ALIVE_ENABLED` | `true` |
 | 2 | `DATABASE_URL` | `jdbc:postgresql://ep-nameless-unit-aowa4mmg-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require` |
 | 3 | `DATABASE_USERNAME` | `neondb_owner` |
 | 4 | `DATABASE_PASSWORD` | `npg_6ZnjCYkRUFS0` |
@@ -104,6 +107,9 @@ Nếu Render hỗ trợ import bulk, copy đoạn này:
 
 ```
 SPRING_PROFILES_ACTIVE=production
+SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+KEEP_ALIVE_ENDPOINT=/api/health/live
+KEEP_ALIVE_ENABLED=true
 DATABASE_URL=jdbc:postgresql://ep-nameless-unit-aowa4mmg-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require
 DATABASE_USERNAME=neondb_owner
 DATABASE_PASSWORD=npg_6ZnjCYkRUFS0

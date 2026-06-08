@@ -4,6 +4,7 @@ import java.util.List;
 
 public record ShiftPeerResponse(
         UserResponse user,
-        List<ScheduleRegistrationResponse> schedules
+        List<ScheduleRegistrationResponse> schedules,
+        ShiftPeerComplianceResponse compliance
 ) {
 }
