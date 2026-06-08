@@ -1,22 +1,29 @@
 package com.java6.springboot.internflow.service.impl;
 
 import com.java6.springboot.internflow.dto.request.AttendanceImageRequest;
+import com.java6.springboot.internflow.dto.request.AttendancePhotoSkipRequest;
 import com.java6.springboot.internflow.dto.request.CheckinRequest;
 import com.java6.springboot.internflow.dto.request.CheckoutRequest;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
+import com.java6.springboot.internflow.dto.response.AttendancePhotoChecklistItemResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
 import com.java6.springboot.internflow.entity.AttendanceImage;
+import com.java6.springboot.internflow.entity.AttendancePhotoRequirement;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
 import com.java6.springboot.internflow.entity.RolePolicy;
+import com.java6.springboot.internflow.entity.ScheduleRegistration;
 import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.AttendanceStatus;
+import com.java6.springboot.internflow.enums.AttendanceImageType;
+import com.java6.springboot.internflow.enums.AttendancePhotoRequirementStatus;
 import com.java6.springboot.internflow.enums.UserRole;
 import com.java6.springboot.internflow.exception.BusinessException;
 import com.java6.springboot.internflow.exception.ForbiddenException;
 import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendanceImageRepository;
+import com.java6.springboot.internflow.repository.AttendancePhotoRequirementRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.RolePolicyRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
@@ -47,6 +54,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final ShiftRepository shiftRepository;
     private final RolePolicyRepository rolePolicyRepository;
     private final AttendanceImageRepository attendanceImageRepository;
+    private final AttendancePhotoRequirementRepository attendancePhotoRequirementRepository;
     private final ScheduleRegistrationRepository scheduleRegistrationRepository;
     private final AttendancePhotoRequirementService attendancePhotoRequirementService;
 
@@ -178,24 +186,36 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<AttendancePhotoChecklistItemResponse> getPhotoChecklist(AppUser currentUser, UUID userId, UUID shiftId, LocalDate date) {
+        LocalDate attendanceDate = date == null ? LocalDate.now() : date;
+        AppUser targetUser = resolveChecklistTargetUser(currentUser, userId, shiftId, attendanceDate);
+        return attendancePhotoRequirementRepository.findChecklistByUserAndDate(targetUser.getId(), attendanceDate, shiftId)
+                .stream()
+                .map(AttendancePhotoChecklistItemResponse::from)
+                .toList();
+    }
+
+    @Override
     @Transactional
     public AttendanceImageResponse addImage(AppUser currentUser, UUID attendanceId, AttendanceImageRequest request) {
         validateImageRequest(attendanceId, request);
         Attendance attendance = findAttendance(attendanceId);
         assertOwner(currentUser, attendance);
+        AttendancePhotoRequirement requirement = findAndValidateRequirement(attendance, request);
 
         AttendanceImage image = attendanceImageRepository
                 .findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
                         attendanceId,
-                        request.imageType(),
-                        request.phase(),
-                        request.expectedTime()
+                        requirement.getImageType(),
+                        requirement.getPhase(),
+                        requirement.getExpectedTime()
                 )
                 .orElseGet(() -> AttendanceImage.builder()
                         .attendance(attendance)
-                        .imageType(request.imageType())
-                        .phase(request.phase())
-                        .expectedTime(request.expectedTime())
+                        .imageType(requirement.getImageType())
+                        .phase(requirement.getPhase())
+                        .expectedTime(requirement.getExpectedTime())
                         .build());
         image.setImageUrl(request.imageUrl().trim());
         image.setStorageProvider(storageProvider(request));
@@ -210,9 +230,45 @@ public class AttendanceServiceImpl implements AttendanceService {
         image.setNote(trimToNull(request.note()));
 
         AttendanceImage savedImage = attendanceImageRepository.save(image);
-        attendancePhotoRequirementService.createForAttendance(attendance);
-        attendancePhotoRequirementService.linkImage(savedImage);
+        requirement.setAttendanceImage(savedImage);
+        requirement.setStatus(AttendancePhotoRequirementStatus.SATISFIED);
+        requirement.setSkipReason(null);
+        attendancePhotoRequirementRepository.save(requirement);
         return AttendanceImageResponse.from(savedImage);
+    }
+
+    @Override
+    @Transactional
+    public AttendancePhotoChecklistItemResponse skipGroupRequirement(AppUser currentUser, UUID attendanceId, UUID requirementId, AttendancePhotoSkipRequest request) {
+        if (attendanceId == null) {
+            throw new BusinessException("Attendance id la bat buoc");
+        }
+        if (requirementId == null) {
+            throw new BusinessException("Moc anh la bat buoc");
+        }
+        if (request == null || !StringUtils.hasText(request.reason())) {
+            throw new BusinessException("Ly do bo qua anh nhom la bat buoc");
+        }
+        Attendance attendance = findAttendance(attendanceId);
+        assertOwner(currentUser, attendance);
+        AttendancePhotoRequirement requirement = attendancePhotoRequirementRepository.findById(requirementId)
+                .orElseThrow(() -> new NotFoundException("Khong tim thay moc anh diem danh"));
+        if (!requirement.getAttendance().getId().equals(attendance.getId())) {
+            throw new ForbiddenException("Moc anh khong thuoc attendance nay");
+        }
+        if (requirement.getImageType() != AttendanceImageType.GROUP) {
+            throw new BusinessException("Chi duoc bo qua anh nhom");
+        }
+        if (requirement.getAttendanceImage() != null || requirement.getStatus() == AttendancePhotoRequirementStatus.SATISFIED) {
+            throw new BusinessException("Moc anh nhom da co anh, khong can bo qua");
+        }
+        if (!isAloneInShift(attendance)) {
+            throw new BusinessException("Chi duoc bo qua anh nhom khi ban di mot minh trong ca nay");
+        }
+
+        requirement.setStatus(AttendancePhotoRequirementStatus.SKIPPED);
+        requirement.setSkipReason(request.reason().trim());
+        return AttendancePhotoChecklistItemResponse.from(attendancePhotoRequirementRepository.save(requirement));
     }
 
     @Override
@@ -245,9 +301,91 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
     }
 
+    private AppUser resolveChecklistTargetUser(AppUser currentUser, UUID requestedUserId, UUID shiftId, LocalDate date) {
+        if (requestedUserId == null || currentUser.getId().equals(requestedUserId)) {
+            return currentUser;
+        }
+        AppUser targetUser = findUser(requestedUserId);
+        if (currentUser.getRole() == UserRole.ADMIN) {
+            return targetUser;
+        }
+        if (currentUser.getRole() == UserRole.TEAM_LEADER) {
+            assertLeaderCanInspectUserOnDate(currentUser, targetUser, shiftId, date);
+            return targetUser;
+        }
+        throw new ForbiddenException("Ban khong co quyen xem checklist anh cua user khac");
+    }
+
+    private void assertLeaderCanInspectUserOnDate(AppUser leader, AppUser targetUser, UUID shiftId, LocalDate date) {
+        List<Shift> leaderShifts = scheduleRegistrationRepository
+                .findByUserAndScheduleDateAndStatus(leader, date, ScheduleRegistrationStatus.REGISTERED)
+                .stream()
+                .map(ScheduleRegistration::getShift)
+                .filter(shift -> shiftId == null || shift.getId().equals(shiftId))
+                .distinct()
+                .toList();
+        if (leaderShifts.isEmpty()) {
+            throw new ForbiddenException("Nhom truong chi duoc xem checklist sinh vien trong ca minh da dang ky");
+        }
+        boolean hasSharedShift = !scheduleRegistrationRepository
+                .findByUserAndShiftInAndScheduleDateBetweenAndStatus(
+                        targetUser,
+                        leaderShifts,
+                        date,
+                        date,
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .isEmpty();
+        if (!hasSharedShift) {
+            throw new ForbiddenException("Nhom truong chi duoc xem checklist sinh vien trung ca voi minh");
+        }
+    }
+
     private Attendance findAttendance(UUID id) {
         return attendanceRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+    }
+
+    private AttendancePhotoRequirement findAndValidateRequirement(Attendance attendance, AttendanceImageRequest request) {
+        AttendancePhotoRequirement requirement = request.requirementId() == null
+                ? attendancePhotoRequirementRepository.findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
+                        attendance.getId(),
+                        request.imageType(),
+                        request.phase(),
+                        request.expectedTime()
+                ).orElseThrow(() -> new BusinessException("Moc anh nay khong nam trong checklist bat buoc"))
+                : attendancePhotoRequirementRepository.findById(request.requirementId())
+                        .orElseThrow(() -> new NotFoundException("Khong tim thay moc anh diem danh"));
+        if (!requirement.getAttendance().getId().equals(attendance.getId())) {
+            throw new ForbiddenException("Moc anh khong thuoc attendance nay");
+        }
+        if (!requirement.isRequired()) {
+            throw new BusinessException("Moc anh nay khong bat buoc upload");
+        }
+        if (request.imageType() != null && request.imageType() != requirement.getImageType()) {
+            throw new BusinessException("Loai anh khong khop voi checklist");
+        }
+        if (request.phase() != null && request.phase() != requirement.getPhase()) {
+            throw new BusinessException("Giai doan anh khong khop voi checklist");
+        }
+        if (request.expectedTime() != null && !request.expectedTime().equals(requirement.getExpectedTime())) {
+            throw new BusinessException("Moc thoi gian anh khong khop voi checklist");
+        }
+        return requirement;
+    }
+
+    private boolean isAloneInShift(Attendance attendance) {
+        long participantCount = scheduleRegistrationRepository
+                .findByShiftAndScheduleDateAndStatusOrderByUser_FullNameAsc(
+                        attendance.getShift(),
+                        attendance.getAttendanceDate(),
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .stream()
+                .map(registration -> registration.getUser().getId())
+                .distinct()
+                .count();
+        return participantCount <= 1;
     }
 
     private void assertOwner(AppUser currentUser, Attendance attendance) {
@@ -347,13 +485,13 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (request == null) {
             throw new BusinessException("Du lieu anh la bat buoc");
         }
-        if (request.imageType() == null) {
+        if (request.requirementId() == null && request.imageType() == null) {
             throw new BusinessException("Loai anh la bat buoc");
         }
-        if (request.phase() == null) {
+        if (request.requirementId() == null && request.phase() == null) {
             throw new BusinessException("Giai doan anh la bat buoc");
         }
-        if (request.expectedTime() == null) {
+        if (request.requirementId() == null && request.expectedTime() == null) {
             throw new BusinessException("Moc thoi gian anh la bat buoc");
         }
         if (!StringUtils.hasText(request.imageUrl())) {

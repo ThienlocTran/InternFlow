@@ -3,8 +3,10 @@ package com.java6.springboot.internflow.dto.request;
 import com.java6.springboot.internflow.enums.AttendanceImagePhase;
 import com.java6.springboot.internflow.enums.AttendanceImageType;
 import java.time.LocalTime;
+import java.util.UUID;
 
 public record AttendanceImageRequest(
+        UUID requirementId,
         AttendanceImageType imageType,
         AttendanceImagePhase phase,
         LocalTime expectedTime,
