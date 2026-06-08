@@ -59,11 +59,11 @@ public class TeamController {
     public ApiResponse<List<ShiftPeerResponse>> getLeaderShiftPeers(
             HttpServletRequest httpRequest,
             @RequestParam UUID leaderId,
-            @RequestParam LocalDate date
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {
         AppUser currentUser = requireTeamLeader(httpRequest);
         currentUserService.rejectMismatchedRequestUser(currentUser, leaderId);
-        return ApiResponse.ok("Lay danh sach cung ca thanh cong", teamService.getLeaderShiftPeers(leaderId, date));
+        return ApiResponse.ok("Lay danh sach cung ca thanh cong", teamService.getLeaderShiftPeers(leaderId, date == null ? LocalDate.now() : date));
     }
 
     @GetMapping("/member-detail")

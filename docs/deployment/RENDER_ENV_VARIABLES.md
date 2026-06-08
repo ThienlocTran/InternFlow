@@ -10,6 +10,23 @@ NAME: SPRING_PROFILES_ACTIVE
 VALUE: production
 ```
 
+```
+NAME: SPRING_JPA_HIBERNATE_DDL_AUTO
+VALUE: validate
+```
+
+```
+NAME: KEEP_ALIVE_ENDPOINT
+VALUE: /api/health/live
+```
+
+```
+NAME: KEEP_ALIVE_ENABLED
+VALUE: true
+```
+
+Production must use `validate`; do not use `update`, `create`, `create-drop`, or `drop` on Render.
+
 ---
 
 ### 2. Database (Neon.tech)
@@ -159,6 +176,9 @@ VALUE: xuandat210425cty@gmail.com
 Đánh dấu khi đã điền xong:
 
 - [ ] `SPRING_PROFILES_ACTIVE` = `production`
+- [ ] `SPRING_JPA_HIBERNATE_DDL_AUTO` = `validate`
+- [ ] `KEEP_ALIVE_ENDPOINT` = `/api/health/live`
+- [ ] `KEEP_ALIVE_ENABLED` = `true`
 - [ ] `DATABASE_URL` = Connection string từ Neon
 - [ ] `DATABASE_USERNAME` = Username từ Neon
 - [ ] `DATABASE_PASSWORD` = Password từ Neon
@@ -222,6 +242,9 @@ VALUE: xuandat210425cty@gmail.com
 
 ```bash
 SPRING_PROFILES_ACTIVE=production
+SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+KEEP_ALIVE_ENDPOINT=/api/health/live
+KEEP_ALIVE_ENABLED=true
 DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
 DATABASE_USERNAME=your-username
 DATABASE_PASSWORD=your-password
