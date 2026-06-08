@@ -148,8 +148,7 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
         int uploadedPersonal = legacyCount(attendance.getCheckinTimemarkImageUrl(), attendance.getCheckoutTimemarkImageUrl())
                 + countImages(images, AttendanceImageType.PERSONAL_TIMEMARK);
         int requiredGroup = groupSlotCount(attendance);
-        int uploadedGroup = legacyCount(attendance.getCheckinGroupImageUrl(), attendance.getCheckoutGroupImageUrl())
-                + countImages(images, AttendanceImageType.GROUP);
+        int uploadedGroup = countImages(images, AttendanceImageType.GROUP);
         int missingPersonal = Math.max(0, requiredPersonal - uploadedPersonal);
         int missingGroup = Math.max(0, requiredGroup - uploadedGroup);
         List<String> missingPersonalSlots = missingPersonalSlots(attendance, images);
@@ -184,12 +183,13 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
     }
 
     private int groupSlotCount(Attendance attendance) {
-        long minutes = Duration.between(attendance.getShift().getStartTime(), attendance.getShift().getEndTime()).toMinutes();
-        return 2 + (int) Math.max(0, (minutes - 1) / 60);
+        return groupSlots(attendance).size();
     }
 
     private int countImages(List<AttendanceImageResponse> images, AttendanceImageType type) {
-        return (int) images.stream().filter(image -> image.imageType() == type).count();
+        return (int) images.stream()
+                .filter(image -> image.imageType() == type && image.phase() == AttendanceImagePhase.DURING_SHIFT)
+                .count();
     }
 
     private int legacyCount(String firstUrl, String secondUrl) {
@@ -229,11 +229,7 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
 
     private List<String> missingGroupSlots(Attendance attendance, List<AttendanceImageResponse> images) {
         List<String> missing = new ArrayList<>();
-        if (!StringUtils.hasText(attendance.getCheckinGroupImageUrl())) {
-            missing.add("ảnh nhóm vào ca");
-        }
-        LocalTime cursor = attendance.getShift().getStartTime().plusHours(1);
-        while (cursor.isBefore(attendance.getShift().getEndTime())) {
+        for (LocalTime cursor : groupSlots(attendance)) {
             LocalTime expectedTime = cursor;
             boolean uploaded = images.stream().anyMatch(image ->
                     image.imageType() == AttendanceImageType.GROUP
@@ -241,13 +237,22 @@ public class AdminStudentDetailServiceImpl implements AdminStudentDetailService 
                             && image.expectedTime().equals(expectedTime)
             );
             if (!uploaded) {
-                missing.add("ảnh nhóm " + expectedTime.toString().substring(0, 5));
+                missing.add("anh nhom " + expectedTime.toString().substring(0, 5));
             }
-            cursor = cursor.plusHours(1);
-        }
-        if (!StringUtils.hasText(attendance.getCheckoutGroupImageUrl())) {
-            missing.add("ảnh nhóm tan ca");
         }
         return missing;
+    }
+
+    private List<LocalTime> groupSlots(Attendance attendance) {
+        List<LocalTime> slots = new ArrayList<>();
+        LocalTime cursor = attendance.getShift().getStartTime().withMinute(0).withSecond(0).withNano(0);
+        if (!cursor.isAfter(attendance.getShift().getStartTime())) {
+            cursor = cursor.plusHours(1);
+        }
+        while (cursor.isBefore(attendance.getShift().getEndTime())) {
+            slots.add(cursor);
+            cursor = cursor.plusHours(1);
+        }
+        return slots;
     }
 }
