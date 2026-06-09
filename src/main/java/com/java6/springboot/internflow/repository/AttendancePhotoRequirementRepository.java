@@ -35,6 +35,18 @@ public interface AttendancePhotoRequirementRepository extends JpaRepository<Atte
             @Param("shiftId") UUID shiftId
     );
 
+    @Query("""
+            select requirement
+            from AttendancePhotoRequirement requirement
+            join fetch requirement.attendance attendance
+            join fetch attendance.user user
+            join fetch attendance.shift shift
+            left join fetch requirement.attendanceImage image
+            where attendance.attendanceDate = :date
+            order by user.fullName asc, shift.startTime asc, requirement.expectedTime asc, requirement.imageType asc
+            """)
+    List<AttendancePhotoRequirement> findChecklistByDate(@Param("date") LocalDate date);
+
     Optional<AttendancePhotoRequirement> findByAttendanceIdAndImageTypeAndPhaseAndExpectedTime(
             UUID attendanceId,
             AttendanceImageType imageType,

@@ -29,6 +29,11 @@ public interface ScheduleRegistrationRepository extends JpaRepository<ScheduleRe
             ScheduleRegistrationStatus status
     );
 
+    List<ScheduleRegistration> findByScheduleDateAndStatusOrderByUser_FullNameAscShift_StartTimeAsc(
+            LocalDate scheduleDate,
+            ScheduleRegistrationStatus status
+    );
+
     List<ScheduleRegistration> findByShiftInAndScheduleDateAndStatusOrderByShift_StartTimeAscUser_FullNameAsc(
             List<Shift> shifts,
             LocalDate scheduleDate,

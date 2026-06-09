@@ -14,6 +14,8 @@ public interface EmailLogRepository extends JpaRepository<EmailLog, UUID> {
 
     List<EmailLog> findByUserAndWorkDateOrderBySentAtDesc(AppUser user, LocalDate workDate);
 
+    List<EmailLog> findByWorkDateOrderBySentAtDesc(LocalDate workDate);
+
     List<EmailLog> findByStatusOrderBySentAtDesc(EmailStatus status);
 
     long countByUserAndStatus(AppUser user, EmailStatus status);

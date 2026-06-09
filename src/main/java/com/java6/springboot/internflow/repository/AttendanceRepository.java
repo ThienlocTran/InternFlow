@@ -22,6 +22,8 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
 
     List<Attendance> findByUserAndAttendanceDateOrderByShift_StartTimeAsc(AppUser user, LocalDate attendanceDate);
 
+    List<Attendance> findByAttendanceDateOrderByUser_FullNameAscShift_StartTimeAsc(LocalDate attendanceDate);
+
     List<Attendance> findByUserOrderByAttendanceDateDescShift_StartTimeAsc(AppUser user);
 
     List<Attendance> findByUserAndAttendanceDateBetweenOrderByAttendanceDateDescShift_StartTimeAsc(
