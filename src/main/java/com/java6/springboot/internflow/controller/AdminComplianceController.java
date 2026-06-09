@@ -2,11 +2,13 @@ package com.java6.springboot.internflow.controller;
 
 import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.response.AdminDailyComplianceResponse;
+import com.java6.springboot.internflow.dto.response.AdminShiftComplianceResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.security.CurrentUserService;
 import com.java6.springboot.internflow.service.AdminComplianceService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,5 +32,16 @@ public class AdminComplianceController {
         AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
         currentUserService.requireAdmin(currentUser);
         return ApiResponse.ok("Lay dashboard compliance theo ngay thanh cong", adminComplianceService.getDailyCompliance(date));
+    }
+
+    @GetMapping("/shift")
+    public ApiResponse<AdminShiftComplianceResponse> getShiftCompliance(
+            HttpServletRequest httpRequest,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam UUID shiftId
+    ) {
+        AppUser currentUser = currentUserService.requireCurrentUser(httpRequest);
+        currentUserService.requireAdmin(currentUser);
+        return ApiResponse.ok("Lay dashboard compliance theo ca thanh cong", adminComplianceService.getShiftCompliance(date, shiftId));
     }
 }

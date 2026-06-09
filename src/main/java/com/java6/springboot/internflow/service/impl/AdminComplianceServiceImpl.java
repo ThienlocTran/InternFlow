@@ -3,6 +3,10 @@ package com.java6.springboot.internflow.service.impl;
 import com.java6.springboot.internflow.dto.response.AdminDailyComplianceResponse;
 import com.java6.springboot.internflow.dto.response.AdminDailyComplianceStudentResponse;
 import com.java6.springboot.internflow.dto.response.AdminDailyComplianceSummaryResponse;
+import com.java6.springboot.internflow.dto.response.AdminShiftComplianceParticipantResponse;
+import com.java6.springboot.internflow.dto.response.AdminShiftComplianceResponse;
+import com.java6.springboot.internflow.dto.response.AdminShiftComplianceSummaryResponse;
+import com.java6.springboot.internflow.dto.response.ShiftResponse;
 import com.java6.springboot.internflow.dto.response.UserResponse;
 import com.java6.springboot.internflow.entity.AppUser;
 import com.java6.springboot.internflow.entity.Attendance;
@@ -10,16 +14,19 @@ import com.java6.springboot.internflow.entity.AttendancePhotoRequirement;
 import com.java6.springboot.internflow.entity.EmailLog;
 import com.java6.springboot.internflow.entity.ReportEntry;
 import com.java6.springboot.internflow.entity.ScheduleRegistration;
+import com.java6.springboot.internflow.entity.Shift;
 import com.java6.springboot.internflow.enums.AttendancePhotoRequirementStatus;
 import com.java6.springboot.internflow.enums.EmailStatus;
 import com.java6.springboot.internflow.enums.ScheduleRegistrationStatus;
 import com.java6.springboot.internflow.enums.UserRole;
+import com.java6.springboot.internflow.exception.NotFoundException;
 import com.java6.springboot.internflow.repository.AppUserRepository;
 import com.java6.springboot.internflow.repository.AttendancePhotoRequirementRepository;
 import com.java6.springboot.internflow.repository.AttendanceRepository;
 import com.java6.springboot.internflow.repository.EmailLogRepository;
 import com.java6.springboot.internflow.repository.ReportEntryRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
+import com.java6.springboot.internflow.repository.ShiftRepository;
 import com.java6.springboot.internflow.service.AdminComplianceService;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -46,6 +53,7 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
     private final AttendancePhotoRequirementRepository attendancePhotoRequirementRepository;
     private final ReportEntryRepository reportEntryRepository;
     private final EmailLogRepository emailLogRepository;
+    private final ShiftRepository shiftRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -100,6 +108,137 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
         );
 
         return new AdminDailyComplianceResponse(targetDate, summary, rows);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminShiftComplianceResponse getShiftCompliance(LocalDate workDate, UUID shiftId) {
+        LocalDate targetDate = workDate == null ? LocalDate.now() : workDate;
+        Shift shift = shiftRepository.findById(shiftId)
+                .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+
+        List<ScheduleRegistration> shiftSchedules = scheduleRegistrationRepository
+                .findByShiftAndScheduleDateAndStatusOrderByUser_FullNameAsc(
+                        shift,
+                        targetDate,
+                        ScheduleRegistrationStatus.REGISTERED
+                );
+        Map<UUID, List<ScheduleRegistration>> daySchedulesByUser = scheduleRegistrationRepository
+                .findByScheduleDateAndStatusOrderByUser_FullNameAscShift_StartTimeAsc(
+                        targetDate,
+                        ScheduleRegistrationStatus.REGISTERED
+                )
+                .stream()
+                .collect(Collectors.groupingBy(item -> item.getUser().getId()));
+        Map<UUID, Attendance> attendanceByUser = attendanceRepository
+                .findByShiftAndAttendanceDateOrderByUser_FullNameAsc(shift, targetDate)
+                .stream()
+                .collect(Collectors.toMap(item -> item.getUser().getId(), item -> item, (first, ignored) -> first));
+        Map<UUID, List<AttendancePhotoRequirement>> requirementsByUser = attendancePhotoRequirementRepository
+                .findChecklistByDate(targetDate)
+                .stream()
+                .filter(item -> item.getAttendance().getShift().getId().equals(shift.getId()))
+                .collect(Collectors.groupingBy(item -> item.getAttendance().getUser().getId()));
+        Map<UUID, List<ReportEntry>> entriesByUser = reportEntryRepository
+                .findByWorkDateOrderByUpdatedAtDesc(targetDate)
+                .stream()
+                .collect(Collectors.groupingBy(item -> item.getDocument().getUser().getId()));
+        Map<UUID, List<EmailLog>> emailLogsByUser = emailLogRepository
+                .findByWorkDateOrderBySentAtDesc(targetDate)
+                .stream()
+                .collect(Collectors.groupingBy(item -> item.getUser().getId()));
+
+        List<AdminShiftComplianceParticipantResponse> rows = shiftSchedules.stream()
+                .map(schedule -> buildShiftParticipant(
+                        schedule.getUser(),
+                        daySchedulesByUser.getOrDefault(schedule.getUser().getId(), List.of()),
+                        attendanceByUser.get(schedule.getUser().getId()),
+                        requirementsByUser.getOrDefault(schedule.getUser().getId(), List.of()),
+                        entriesByUser.getOrDefault(schedule.getUser().getId(), List.of()),
+                        emailLogsByUser.getOrDefault(schedule.getUser().getId(), List.of())
+                ))
+                .toList();
+
+        return new AdminShiftComplianceResponse(
+                targetDate,
+                ShiftResponse.from(shift),
+                shiftSummary(shift, rows),
+                rows
+        );
+    }
+
+    private AdminShiftComplianceParticipantResponse buildShiftParticipant(
+            AppUser student,
+            List<ScheduleRegistration> daySchedules,
+            Attendance attendance,
+            List<AttendancePhotoRequirement> requirements,
+            List<ReportEntry> entries,
+            List<EmailLog> emailLogs
+    ) {
+        List<Attendance> selectedAttendances = attendance == null ? List.of() : List.of(attendance);
+        PhotoStats photoStats = photoStats(selectedAttendances, requirements);
+        ReportEntry dailyEntry = entries.stream().findFirst().orElse(null);
+        int requiredPages = daySchedules.isEmpty()
+                ? dailyEntry == null ? 0 : dailyEntry.getRequiredPages()
+                : requiredPages(daySchedules);
+        JournalStats journalStats = journalStats(dailyEntry, requiredPages);
+        boolean checkedIn = attendance != null && attendance.getCheckinTime() != null;
+        boolean checkedOut = attendance != null && attendance.getCheckoutTime() != null;
+        boolean attendanceReady = checkedIn && checkedOut;
+        boolean photosReady = attendanceReady && photoStats.missing().isEmpty();
+        boolean mailSent = mailSent(emailLogs);
+        boolean compliant = attendanceReady && photosReady && journalStats.ready() && mailSent;
+
+        return new AdminShiftComplianceParticipantResponse(
+                UserResponse.from(student),
+                student.getRole() == UserRole.INTERN,
+                attendanceStatus(attendance),
+                checkedIn,
+                checkedOut,
+                attendanceReady,
+                attendance == null ? null : attendance.getCheckinTime(),
+                attendance == null ? null : attendance.getCheckoutTime(),
+                photoStats.requiredCount(),
+                photoStats.satisfiedCount(),
+                photoStats.skippedCount(),
+                photoStats.missingCount(),
+                photoStats.missing(),
+                photosReady,
+                journalStats.ready(),
+                journalStats.requiredPages(),
+                journalStats.submittedPages(),
+                journalStats.missingPages(),
+                journalStats.issues(),
+                mailSent,
+                mailStatus(emailLogs),
+                compliant
+        );
+    }
+
+    private AdminShiftComplianceSummaryResponse shiftSummary(
+            Shift shift,
+            List<AdminShiftComplianceParticipantResponse> rows
+    ) {
+        int occupiedSlots = (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::consumesSlot).count();
+        return new AdminShiftComplianceSummaryResponse(
+                shift.getMaxParticipants(),
+                occupiedSlots,
+                occupiedSlots >= shift.getMaxParticipants(),
+                rows.size(),
+                (int) rows.stream().filter(item -> item.user().role() == UserRole.INTERN).count(),
+                (int) rows.stream().filter(item -> item.user().role() == UserRole.TEAM_LEADER).count(),
+                (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::checkedIn).count(),
+                (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::checkedOut).count(),
+                (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::attendanceReady).count(),
+                (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::photosReady).count(),
+                (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::journalReady).count(),
+                (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::mailSent).count(),
+                (int) rows.stream().filter(AdminShiftComplianceParticipantResponse::compliant).count()
+        );
+    }
+
+    private String attendanceStatus(Attendance attendance) {
+        return attendance == null ? "NOT_CHECKED_IN" : attendance.getStatus().name();
     }
 
     private AdminDailyComplianceStudentResponse buildRow(
