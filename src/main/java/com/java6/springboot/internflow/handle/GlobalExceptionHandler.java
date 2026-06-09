@@ -53,16 +53,16 @@ public class GlobalExceptionHandler {
         String message = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
-                .map(error -> error.getDefaultMessage() == null ? error.getField() + " khong hop le" : error.getDefaultMessage())
+                .map(error -> error.getDefaultMessage() == null ? error.getField() + " không hợp lệ" : error.getDefaultMessage())
                 .collect(Collectors.joining(", "));
         return ResponseEntity.badRequest()
-                .body(new ApiResponse<>(false, message.isBlank() ? "Du lieu gui len chua hop le" : message, null, Instant.now()));
+                .body(new ApiResponse<>(false, message.isBlank() ? "Dữ liệu gửi lên chưa hợp lệ." : message, null, Instant.now()));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException exception) {
         return ResponseEntity.badRequest()
-                .body(new ApiResponse<>(false, "Du lieu gui len khong dung dinh dang. Vui long thu lai.", null, Instant.now()));
+                .body(new ApiResponse<>(false, "Dữ liệu gửi lên không đúng định dạng. Vui lòng thử lại.", null, Instant.now()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -84,7 +84,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleException(Exception exception) {
         log.error("Unhandled exception", exception);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ApiResponse<>(false, "He thong dang gap su co ngoai du kien. Vui long thu lai sau vai giay.", null, Instant.now()));
+                .body(new ApiResponse<>(false, "Hệ thống đang gặp sự cố ngoài dự kiến. Vui lòng thử lại sau vài giây.", null, Instant.now()));
     }
 
     private String rootCauseMessage(Throwable throwable) {
@@ -98,17 +98,17 @@ public class GlobalExceptionHandler {
     private String persistenceMessage(Throwable throwable) {
         String detail = rootCauseMessage(throwable).toLowerCase();
         if (detail.contains("uk_attendance_user_shift_date")) {
-            return "Ban da checkin ca nay trong ngay roi.";
+            return "Bạn đã check-in ca này trong ngày rồi.";
         }
         if (detail.contains("uk_attendance_image_slot")) {
-            return "Moc anh nay da ton tai. He thong se cap nhat lai anh moi neu ban thu lai.";
+            return "Mốc ảnh này đã tồn tại. Hệ thống sẽ cập nhật lại ảnh mới nếu bạn thử lại.";
         }
         if (detail.contains("not-null") && detail.contains("group_image")) {
-            return "Anh nhom la tuy chon, nhung du lieu cu tren he thong dang chua dong bo. Vui long tai lai trang va thu lai.";
+            return "Ảnh nhóm là tùy chọn, nhưng dữ liệu cũ trên hệ thống chưa đồng bộ. Vui lòng tải lại trang và thử lại.";
         }
         if (detail.contains("value too long") || detail.contains("too long for type character varying(500)")) {
-            return "Du lieu anh hoac ghi chu qua dai de luu. Vui long thu lai voi du lieu ngan hon.";
+            return "Dữ liệu ảnh hoặc ghi chú quá dài để lưu. Vui lòng thử lại với dữ liệu ngắn hơn.";
         }
-        return "Khong the luu du lieu vi thong tin bi trung hoac chua hop le.";
+        return "Không thể lưu dữ liệu vì thông tin bị trùng hoặc chưa hợp lệ.";
     }
 }

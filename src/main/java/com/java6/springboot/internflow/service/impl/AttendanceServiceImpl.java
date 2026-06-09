@@ -63,35 +63,35 @@ public class AttendanceServiceImpl implements AttendanceService {
     public AttendanceResponse checkin(AppUser user, CheckinRequest request) {
         validateCheckinRequest(request);
         if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
-            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc diem danh");
+            throw new ForbiddenException("Chỉ sinh viên hoặc nhóm trưởng mới được điểm danh.");
         }
         Shift shift = findShift(request.shiftId());
         LocalDate attendanceDate = request.attendanceDate() == null ? LocalDate.now() : request.attendanceDate();
 
         attendanceRepository.findByUserAndShiftAndAttendanceDate(user, shift, attendanceDate)
                 .ifPresent(attendance -> {
-                    throw new BusinessException("Ban da checkin ca nay trong ngay");
+            throw new BusinessException("Bạn đã check-in ca này trong ngày.");
                 });
 
         RolePolicy policy = rolePolicyRepository.findByRole(user.getRole())
-                .orElseThrow(() -> new BusinessException("Chua cau hinh quota cho role " + user.getRole()));
+                .orElseThrow(() -> new BusinessException("Chưa cấu hình quota cho vai trò " + user.getRole() + "."));
         if (policy.getMaxShiftsPerDay() <= 0 || policy.getTargetShiftsPerWeek() <= 0) {
-            throw new BusinessException("Role nay khong phai sinh vien thuc tap nen khong can diem danh ca");
+            throw new BusinessException("Vai trò này không phải sinh viên thực tập nên không cần điểm danh ca.");
         }
         long todayShiftCount = attendanceRepository.countByUserAndAttendanceDate(user, attendanceDate);
         if (todayShiftCount >= policy.getMaxShiftsPerDay()) {
-            throw new BusinessException("Da vuot so ca toi da trong ngay");
+            throw new BusinessException("Bạn đã vượt số ca tối đa trong ngày.");
         }
         scheduleRegistrationRepository.findByUserAndShiftAndScheduleDateAndStatus(
                 user,
                 shift,
                 attendanceDate,
                 ScheduleRegistrationStatus.REGISTERED
-        ).orElseThrow(() -> new BusinessException("Ban can dang ky ca nay truoc khi diem danh"));
+        ).orElseThrow(() -> new BusinessException("Bạn cần đăng ký ca này trước khi điểm danh."));
 
         long shiftParticipantCount = attendanceRepository.countByShiftAndAttendanceDate(shift, attendanceDate);
         if (shiftParticipantCount >= shift.getMaxParticipants()) {
-            throw new BusinessException("Ca nay da du " + shift.getMaxParticipants() + " ban");
+            throw new BusinessException("Ca này đã đủ " + shift.getMaxParticipants() + " bạn.");
         }
 
         Attendance attendance = Attendance.builder()
@@ -116,17 +116,17 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Transactional
     public AttendanceResponse checkout(AppUser currentUser, UUID attendanceId, CheckoutRequest request) {
         if (attendanceId == null) {
-            throw new BusinessException("Attendance id la bat buoc");
+            throw new BusinessException("Mã điểm danh là bắt buộc.");
         }
         if (request == null || !StringUtils.hasText(request.timemarkImageUrl())) {
-            throw new BusinessException("Anh TimeMark checkout la bat buoc");
+            throw new BusinessException("Ảnh TimeMark checkout là bắt buộc.");
         }
 
         Attendance attendance = attendanceRepository.findById(attendanceId)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy lượt điểm danh."));
         assertOwner(currentUser, attendance);
         if (attendance.getStatus() != AttendanceStatus.CHECKED_IN) {
-            throw new BusinessException("Chi duoc checkout khi da checkin");
+            throw new BusinessException("Chỉ được checkout sau khi đã check-in.");
         }
 
         attendance.setStatus(AttendanceStatus.CHECKED_OUT);
@@ -146,17 +146,17 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Transactional
     public AttendanceResponse saveCheckoutDraft(AppUser currentUser, UUID attendanceId, CheckoutRequest request) {
         if (attendanceId == null) {
-            throw new BusinessException("Attendance id la bat buoc");
+            throw new BusinessException("Mã điểm danh là bắt buộc.");
         }
         if (request == null || (!StringUtils.hasText(request.timemarkImageUrl()) && !StringUtils.hasText(request.groupImageUrl()))) {
-            throw new BusinessException("Can co it nhat mot anh checkout de luu tam");
+            throw new BusinessException("Cần có ít nhất một ảnh checkout để lưu tạm.");
         }
 
         Attendance attendance = attendanceRepository.findById(attendanceId)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy lượt điểm danh."));
         assertOwner(currentUser, attendance);
         if (attendance.getStatus() != AttendanceStatus.CHECKED_IN) {
-            throw new BusinessException("Chi duoc luu anh tam khi dang trong ca");
+            throw new BusinessException("Chỉ được lưu ảnh tạm khi đang trong ca.");
         }
 
         if (StringUtils.hasText(request.timemarkImageUrl())) {
@@ -241,29 +241,29 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Transactional
     public AttendancePhotoChecklistItemResponse skipGroupRequirement(AppUser currentUser, UUID attendanceId, UUID requirementId, AttendancePhotoSkipRequest request) {
         if (attendanceId == null) {
-            throw new BusinessException("Attendance id la bat buoc");
+            throw new BusinessException("Mã điểm danh là bắt buộc.");
         }
         if (requirementId == null) {
-            throw new BusinessException("Moc anh la bat buoc");
+            throw new BusinessException("Mốc ảnh là bắt buộc.");
         }
         if (request == null || !StringUtils.hasText(request.reason())) {
-            throw new BusinessException("Ly do bo qua anh nhom la bat buoc");
+            throw new BusinessException("Lý do bỏ qua ảnh nhóm là bắt buộc.");
         }
         Attendance attendance = findAttendance(attendanceId);
         assertOwner(currentUser, attendance);
         AttendancePhotoRequirement requirement = attendancePhotoRequirementRepository.findById(requirementId)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay moc anh diem danh"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy mốc ảnh điểm danh."));
         if (!requirement.getAttendance().getId().equals(attendance.getId())) {
-            throw new ForbiddenException("Moc anh khong thuoc attendance nay");
+            throw new ForbiddenException("Mốc ảnh không thuộc lượt điểm danh này.");
         }
         if (requirement.getImageType() != AttendanceImageType.GROUP) {
-            throw new BusinessException("Chi duoc bo qua anh nhom");
+            throw new BusinessException("Chỉ được bỏ qua ảnh nhóm.");
         }
         if (requirement.getAttendanceImage() != null || requirement.getStatus() == AttendancePhotoRequirementStatus.SATISFIED) {
-            throw new BusinessException("Moc anh nhom da co anh, khong can bo qua");
+            throw new BusinessException("Mốc ảnh nhóm đã có ảnh, không cần bỏ qua.");
         }
         if (!isAloneInShift(attendance)) {
-            throw new BusinessException("Chi duoc bo qua anh nhom khi ban di mot minh trong ca nay");
+            throw new BusinessException("Chỉ được bỏ qua ảnh nhóm khi bạn đi một mình trong ca này.");
         }
 
         requirement.setStatus(AttendancePhotoRequirementStatus.SKIPPED);
@@ -275,7 +275,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Transactional(readOnly = true)
     public List<AttendanceImageResponse> getImages(AppUser currentUser, UUID attendanceId) {
         if (attendanceId == null) {
-            throw new BusinessException("Attendance id la bat buoc");
+            throw new BusinessException("Mã điểm danh là bắt buộc.");
         }
         assertOwner(currentUser, findAttendance(attendanceId));
         return attendanceImageRepository.findByAttendanceIdOrderByExpectedTimeAscDisplayOrderAsc(attendanceId)
@@ -286,19 +286,19 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     private void validateCheckinRequest(CheckinRequest request) {
         if (request == null) {
-            throw new BusinessException("Du lieu checkin la bat buoc");
+            throw new BusinessException("Dữ liệu check-in là bắt buộc.");
         }
         if (request.shiftId() == null) {
-            throw new BusinessException("Shift id la bat buoc");
+            throw new BusinessException("Mã ca là bắt buộc.");
         }
         if (!StringUtils.hasText(request.timemarkImageUrl())) {
-            throw new BusinessException("Anh TimeMark checkin la bat buoc");
+            throw new BusinessException("Ảnh TimeMark check-in là bắt buộc.");
         }
     }
 
     private AppUser findUser(UUID id) {
         return appUserRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy người dùng."));
     }
 
     private AppUser resolveChecklistTargetUser(AppUser currentUser, UUID requestedUserId, UUID shiftId, LocalDate date) {
@@ -313,7 +313,7 @@ public class AttendanceServiceImpl implements AttendanceService {
             assertLeaderCanInspectUserOnDate(currentUser, targetUser, shiftId, date);
             return targetUser;
         }
-        throw new ForbiddenException("Ban khong co quyen xem checklist anh cua user khac");
+        throw new ForbiddenException("Bạn không có quyền xem checklist ảnh của người dùng khác.");
     }
 
     private void assertLeaderCanInspectUserOnDate(AppUser leader, AppUser targetUser, UUID shiftId, LocalDate date) {
@@ -325,7 +325,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .distinct()
                 .toList();
         if (leaderShifts.isEmpty()) {
-            throw new ForbiddenException("Nhom truong chi duoc xem checklist sinh vien trong ca minh da dang ky");
+            throw new ForbiddenException("Nhóm trưởng chỉ được xem checklist sinh viên trong ca mình đã đăng ký.");
         }
         boolean hasSharedShift = !scheduleRegistrationRepository
                 .findByUserAndShiftInAndScheduleDateBetweenAndStatus(
@@ -337,13 +337,13 @@ public class AttendanceServiceImpl implements AttendanceService {
                 )
                 .isEmpty();
         if (!hasSharedShift) {
-            throw new ForbiddenException("Nhom truong chi duoc xem checklist sinh vien trung ca voi minh");
+            throw new ForbiddenException("Nhóm trưởng chỉ được xem checklist sinh viên trùng ca với mình.");
         }
     }
 
     private Attendance findAttendance(UUID id) {
         return attendanceRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay attendance"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy lượt điểm danh."));
     }
 
     private AttendancePhotoRequirement findAndValidateRequirement(Attendance attendance, AttendanceImageRequest request) {
@@ -353,23 +353,23 @@ public class AttendanceServiceImpl implements AttendanceService {
                         request.imageType(),
                         request.phase(),
                         request.expectedTime()
-                ).orElseThrow(() -> new BusinessException("Moc anh nay khong nam trong checklist bat buoc"))
+                ).orElseThrow(() -> new BusinessException("Mốc ảnh này không nằm trong checklist bắt buộc."))
                 : attendancePhotoRequirementRepository.findById(request.requirementId())
-                        .orElseThrow(() -> new NotFoundException("Khong tim thay moc anh diem danh"));
+                        .orElseThrow(() -> new NotFoundException("Không tìm thấy mốc ảnh điểm danh."));
         if (!requirement.getAttendance().getId().equals(attendance.getId())) {
-            throw new ForbiddenException("Moc anh khong thuoc attendance nay");
+            throw new ForbiddenException("Mốc ảnh không thuộc lượt điểm danh này.");
         }
         if (!requirement.isRequired()) {
-            throw new BusinessException("Moc anh nay khong bat buoc upload");
+            throw new BusinessException("Mốc ảnh này không bắt buộc upload.");
         }
         if (request.imageType() != null && request.imageType() != requirement.getImageType()) {
-            throw new BusinessException("Loai anh khong khop voi checklist");
+            throw new BusinessException("Loại ảnh không khớp với checklist.");
         }
         if (request.phase() != null && request.phase() != requirement.getPhase()) {
-            throw new BusinessException("Giai doan anh khong khop voi checklist");
+            throw new BusinessException("Giai đoạn ảnh không khớp với checklist.");
         }
         if (request.expectedTime() != null && !request.expectedTime().equals(requirement.getExpectedTime())) {
-            throw new BusinessException("Moc thoi gian anh khong khop voi checklist");
+            throw new BusinessException("Mốc thời gian ảnh không khớp với checklist.");
         }
         return requirement;
     }
@@ -390,15 +390,15 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     private void assertOwner(AppUser currentUser, Attendance attendance) {
         if (!attendance.getUser().getId().equals(currentUser.getId())) {
-            throw new ForbiddenException("Ban khong co quyen thao tac attendance cua user khac");
+            throw new ForbiddenException("Bạn không có quyền thao tác điểm danh của người dùng khác.");
         }
     }
 
     private Shift findShift(UUID id) {
         Shift shift = shiftRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy ca."));
         if (!shift.isActive()) {
-            throw new BusinessException("Ca nay dang tam tat, khong the checkin");
+            throw new BusinessException("Ca này đang tạm tắt, không thể check-in.");
         }
         return shift;
     }
@@ -480,22 +480,22 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     private void validateImageRequest(UUID attendanceId, AttendanceImageRequest request) {
         if (attendanceId == null) {
-            throw new BusinessException("Attendance id la bat buoc");
+            throw new BusinessException("Mã điểm danh là bắt buộc.");
         }
         if (request == null) {
-            throw new BusinessException("Du lieu anh la bat buoc");
+            throw new BusinessException("Dữ liệu ảnh là bắt buộc.");
         }
         if (request.requirementId() == null && request.imageType() == null) {
-            throw new BusinessException("Loai anh la bat buoc");
+            throw new BusinessException("Loại ảnh là bắt buộc.");
         }
         if (request.requirementId() == null && request.phase() == null) {
-            throw new BusinessException("Giai doan anh la bat buoc");
+            throw new BusinessException("Giai đoạn ảnh là bắt buộc.");
         }
         if (request.requirementId() == null && request.expectedTime() == null) {
-            throw new BusinessException("Moc thoi gian anh la bat buoc");
+            throw new BusinessException("Mốc thời gian ảnh là bắt buộc.");
         }
         if (!StringUtils.hasText(request.imageUrl())) {
-            throw new BusinessException("URL anh la bat buoc");
+            throw new BusinessException("URL ảnh là bắt buộc.");
         }
     }
 }

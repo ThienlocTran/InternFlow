@@ -74,18 +74,18 @@ public class TeamServiceImpl implements TeamService {
     @Transactional
     public TeamResponse createTeam(TeamRequest request) {
         if (request == null || !StringUtils.hasText(request.name())) {
-            throw new BusinessException("Ten nhom la bat buoc");
+            throw new BusinessException("Tên nhóm là bắt buộc.");
         }
         if (request.leaderId() == null) {
-            throw new BusinessException("Nhom truong la bat buoc");
+            throw new BusinessException("Nhóm trưởng là bắt buộc.");
         }
         if (teamRepository.existsByName(request.name().trim())) {
-            throw new BusinessException("Ten nhom da ton tai");
+            throw new BusinessException("Tên nhóm đã tồn tại.");
         }
 
         AppUser leader = findUser(request.leaderId());
         if (leader.getRole() != UserRole.TEAM_LEADER) {
-            throw new BusinessException("Leader phai co role TEAM_LEADER");
+            throw new BusinessException("Leader phải có vai trò TEAM_LEADER.");
         }
 
         Team team = Team.builder()
@@ -108,12 +108,12 @@ public class TeamServiceImpl implements TeamService {
     @Transactional
     public UserResponse addMember(UUID teamId, AddTeamMemberRequest request) {
         if (request == null || request.userId() == null) {
-            throw new BusinessException("User id la bat buoc");
+            throw new BusinessException("Mã người dùng là bắt buộc.");
         }
         Team team = findTeam(teamId);
         AppUser user = findUser(request.userId());
         if (teamMemberRepository.existsByUserId(user.getId())) {
-            throw new BusinessException("Sinh vien da thuoc mot nhom");
+            throw new BusinessException("Sinh viên đã thuộc một nhóm.");
         }
 
         teamMemberRepository.save(TeamMember.builder()
@@ -137,11 +137,11 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(readOnly = true)
     public List<ShiftPeerResponse> getLeaderShiftPeers(UUID leaderId, LocalDate date) {
         if (leaderId == null || date == null) {
-            throw new BusinessException("Leader id va ngay la bat buoc");
+            throw new BusinessException("Mã nhóm trưởng và ngày là bắt buộc.");
         }
         AppUser leader = findUser(leaderId);
         if (leader.getRole() != UserRole.TEAM_LEADER) {
-            throw new BusinessException("Chi nhom truong moi xem duoc danh sach cung ca");
+            throw new BusinessException("Chỉ nhóm trưởng mới xem được danh sách cùng ca.");
         }
         List<ScheduleRegistration> leaderSchedules = scheduleRegistrationRepository
                 .findByUserAndScheduleDateAndStatus(leader, date, ScheduleRegistrationStatus.REGISTERED);
@@ -176,18 +176,18 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(readOnly = true)
     public AdminShiftComplianceResponse getLeaderShiftCompliance(UUID leaderId, LocalDate date, UUID shiftId) {
         if (leaderId == null || date == null || shiftId == null) {
-            throw new BusinessException("Leader id, ngay va ca la bat buoc");
+            throw new BusinessException("Mã nhóm trưởng, ngày và ca là bắt buộc.");
         }
         AppUser leader = findUser(leaderId);
         if (leader.getRole() != UserRole.TEAM_LEADER) {
-            throw new BusinessException("Chi nhom truong moi xem duoc compliance theo ca");
+            throw new BusinessException("Chỉ nhóm trưởng mới xem được compliance theo ca.");
         }
         boolean registeredShift = scheduleRegistrationRepository
                 .findByUserAndScheduleDateAndStatus(leader, date, ScheduleRegistrationStatus.REGISTERED)
                 .stream()
                 .anyMatch(registration -> registration.getShift().getId().equals(shiftId));
         if (!registeredShift) {
-            throw new ForbiddenException("Nhom truong chi duoc xem compliance ca minh da dang ky");
+            throw new ForbiddenException("Nhóm trưởng chỉ được xem compliance ca mình đã đăng ký.");
         }
         return adminComplianceService.getShiftCompliance(date, shiftId);
     }
@@ -294,13 +294,13 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(readOnly = true)
     public TeamMemberDetailResponse getMemberDetail(UUID leaderId, UUID memberId, LocalDate startDate, LocalDate endDate) {
         if (leaderId == null || memberId == null) {
-            throw new BusinessException("Leader id va member id la bat buoc");
+            throw new BusinessException("Mã nhóm trưởng và mã thành viên là bắt buộc.");
         }
 
         // Verify leader role
         AppUser leader = findUser(leaderId);
         if (leader.getRole() != UserRole.TEAM_LEADER) {
-            throw new BusinessException("Chi nhom truong moi xem duoc chi tiet thanh vien");
+            throw new BusinessException("Chỉ nhóm trưởng mới xem được chi tiết thành viên.");
         }
 
         // Get member info
@@ -365,13 +365,13 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(readOnly = true)
     public TeamMemberFullDetailResponse getMemberFullDetail(UUID leaderId, UUID memberId, LocalDate date) {
         if (leaderId == null || memberId == null) {
-            throw new BusinessException("Leader id va member id la bat buoc");
+            throw new BusinessException("Mã nhóm trưởng và mã thành viên là bắt buộc.");
         }
 
         // Verify leader role
         AppUser leader = findUser(leaderId);
         if (leader.getRole() != UserRole.TEAM_LEADER) {
-            throw new BusinessException("Chi nhom truong moi xem duoc chi tiet thanh vien");
+            throw new BusinessException("Chỉ nhóm trưởng mới xem được chi tiết thành viên.");
         }
 
         // Get member info
@@ -403,12 +403,12 @@ public class TeamServiceImpl implements TeamService {
 
     private Team findTeam(UUID id) {
         return teamRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay nhom"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy nhóm."));
     }
 
     private AppUser findUser(UUID id) {
         return appUserRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy người dùng."));
     }
 
     private void assertLeaderCanInspectMember(AppUser leader, AppUser member, LocalDate startDate, LocalDate endDate) {
@@ -424,7 +424,7 @@ public class TeamServiceImpl implements TeamService {
                 .distinct()
                 .toList();
         if (leaderShifts.isEmpty()) {
-            throw new ForbiddenException("Nhom truong chi duoc xem sinh vien trong ca minh da dang ky");
+            throw new ForbiddenException("Nhóm trưởng chỉ được xem sinh viên trong ca mình đã đăng ký.");
         }
 
         boolean hasSharedShift = !scheduleRegistrationRepository
@@ -437,7 +437,7 @@ public class TeamServiceImpl implements TeamService {
                 )
                 .isEmpty();
         if (!hasSharedShift) {
-            throw new ForbiddenException("Nhom truong chi duoc xem sinh vien trung ca voi minh");
+            throw new ForbiddenException("Nhóm trưởng chỉ được xem sinh viên trùng ca với mình.");
         }
     }
 }

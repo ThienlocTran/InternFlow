@@ -151,7 +151,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     public ReportEntryResponse saveEntry(AppUser user, ReportEntryRequest request) {
         validateRequest(request);
         if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
-            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc luu nhat ky");
+            throw new ForbiddenException("Chỉ sinh viên hoặc nhóm trưởng mới được lưu nhật ký.");
         }
         ReportDocument document = getOrCreateDocument(user);
         List<ScheduleRegistration> daySchedules = scheduleRegistrationRepository
@@ -160,7 +160,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 .sorted(Comparator.comparing(item -> item.getShift().getStartTime()))
                 .toList();
         if (daySchedules.isEmpty()) {
-            throw new BusinessException("Ngay nay chua co ca dang ky nen chua can viet nhat ky");
+            throw new BusinessException("Ngày này chưa có ca đăng ký nên chưa cần viết nhật ký.");
         }
 
         ReportEntry entry = reportEntryRepository.findByDocumentAndWorkDate(document, request.workDate())
@@ -201,16 +201,16 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Transactional
     public ReportWordUploadResponse uploadWordEntry(AppUser user, LocalDate workDate, MultipartFile file) {
         if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
-            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc upload nhat ky Word");
+            throw new ForbiddenException("Chỉ sinh viên hoặc nhóm trưởng mới được upload nhật ký Word.");
         }
         if (workDate == null || workDate.isAfter(LocalDate.now().plusDays(1))) {
-            throw new BusinessException("Ngay viet nhat ky khong hop le");
+            throw new BusinessException("Ngày viết nhật ký không hợp lệ.");
         }
         validateWordFile(file);
         ReportDocument document = getOrCreateDocument(user);
         List<ScheduleRegistration> daySchedules = registeredSchedules(user, workDate);
         if (daySchedules.isEmpty()) {
-            throw new BusinessException("Ngay nay chua co ca dang ky nen chua can viet nhat ky");
+            throw new BusinessException("Ngày này chưa có ca đăng ký nên chưa cần viết nhật ký.");
         }
 
         WordDocumentContent wordContent = readWordDocument(file);
@@ -258,13 +258,13 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Transactional(readOnly = true)
     public StoredWordFile downloadWordEntry(AppUser user, LocalDate workDate) {
         if (workDate == null) {
-            throw new BusinessException("Ngay tai file Word la bat buoc");
+            throw new BusinessException("Ngày tải file Word là bắt buộc.");
         }
         ReportDocument document = reportDocumentRepository.findByUser(user)
-                .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+                .orElseThrow(() -> new BusinessException("Sinh viên chưa có nhật ký thực tập."));
         Path filePath = wordFilePath(user.getId(), workDate);
         if (!Files.exists(filePath)) {
-            throw new NotFoundException("Khong tim thay file Word da upload");
+            throw new NotFoundException("Không tìm thấy file Word đã upload.");
         }
         try {
             return new StoredWordFile(
@@ -273,7 +273,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                     WORD_CONTENT_TYPE
             );
         } catch (IOException exception) {
-            throw new BusinessException("Khong the doc file Word da upload");
+            throw new BusinessException("Không thể đọc file Word đã upload.");
         }
     }
 
@@ -289,7 +289,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                     : wordStorageFileName(workDate);
             return new StoredWordFile(storedWordDisplayName(user.getId(), workDate, fileName), Files.readAllBytes(filePath), WORD_CONTENT_TYPE);
         } catch (IOException exception) {
-            throw new BusinessException("Khong the doc file Word da upload");
+            throw new BusinessException("Không thể đọc file Word đã upload.");
         }
     }
 
@@ -297,7 +297,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Transactional(readOnly = true)
     public List<ReportRevisionResponse> getRevisions(AppUser currentUser, UUID entryId) {
         ReportEntry entry = reportEntryRepository.findById(entryId)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay nhat ky"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy nhật ký."));
         assertCanReadEntry(currentUser, entry);
         return reportRevisionRepository.findByEntryOrderByCreatedAtDesc(entry)
                 .stream()
@@ -318,55 +318,55 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Transactional(readOnly = true)
     public DailyMailReadinessResponse getDailyMailReadiness(AppUser user, LocalDate workDate) {
         if (workDate == null) {
-            throw new BusinessException("Ngay preview mail la bat buoc");
+            throw new BusinessException("Ngày preview mail là bắt buộc.");
         }
 
         List<DailyMailReadinessItemResponse> checks = new ArrayList<>();
         boolean allowedRole = user.getRole() == UserRole.INTERN || user.getRole() == UserRole.TEAM_LEADER;
         checks.add(readinessCheck(
                 "role",
-                "Quyen gui mail",
+                "Quyền gửi mail",
                 allowedRole,
-                allowedRole ? List.of() : List.of("Chi sinh vien hoac nhom truong moi duoc gui mail"),
-                allowedRole ? "Tai khoan duoc gui mail" : "Tai khoan khong duoc gui mail"
+                allowedRole ? List.of() : List.of("Chỉ sinh viên hoặc nhóm trưởng mới được gửi mail."),
+                allowedRole ? "Tài khoản được gửi mail" : "Tài khoản không được gửi mail"
         ));
 
         List<String> missingProfileFields = ProfileCompleteness.missingRequiredFields(user);
         checks.add(readinessCheck(
                 "profile",
-                "Ho so sinh vien",
+                "Hồ sơ sinh viên",
                 missingProfileFields.isEmpty(),
                 missingProfileFields,
-                missingProfileFields.isEmpty() ? "Ho so du thong tin" : "Thieu thong tin bat buoc"
+                missingProfileFields.isEmpty() ? "Hồ sơ đủ thông tin" : "Thiếu thông tin bắt buộc"
         ));
 
         List<ScheduleRegistration> schedules = registeredSchedules(user, workDate);
         checks.add(readinessCheck(
                 "schedule",
-                "Ca dang ky",
+                "Ca đăng ký",
                 !schedules.isEmpty(),
-                schedules.isEmpty() ? List.of("Ngay nay chua co ca dang ky") : List.of(),
-                schedules.isEmpty() ? "Khong co ca" : shiftCodes(schedules)
+                schedules.isEmpty() ? List.of("Ngày này chưa có ca đăng ký.") : List.of(),
+                schedules.isEmpty() ? "Không có ca" : shiftCodes(schedules)
         ));
 
         List<Attendance> attendances = attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(user, workDate);
         List<String> missingAttendances = missingAttendanceShifts(schedules, attendances);
         checks.add(readinessCheck(
                 "attendance",
-                "Diem danh theo ca",
+                "Điểm danh theo ca",
                 !schedules.isEmpty() && missingAttendances.isEmpty(),
                 missingAttendances,
-                attendances.size() + "/" + schedules.size() + " ca da diem danh"
+                attendances.size() + "/" + schedules.size() + " ca đã điểm danh"
         ));
 
         List<AttendancePhotoRequirement> photoRequirements = attendancePhotoRequirementRepository.findChecklistByUserAndDate(user.getId(), workDate, null);
         PhotoStats photoStats = photoStats(attendances, photoRequirements);
         checks.add(readinessCheck(
                 "photos",
-                "Anh diem danh",
+                "Ảnh điểm danh",
                 !schedules.isEmpty() && !attendances.isEmpty() && photoStats.missing().isEmpty(),
                 photoStats.missing(),
-                photoStats.satisfiedCount() + "/" + photoStats.requiredCount() + " anh du, " + photoStats.skippedCount() + " skipped"
+                photoStats.satisfiedCount() + "/" + photoStats.requiredCount() + " ảnh đủ, " + photoStats.skippedCount() + " ảnh bỏ qua"
         ));
 
         ReportDocument document = reportDocumentRepository.findByUser(user).orElse(null);
@@ -380,10 +380,10 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         boolean journalReady = missingJournal.isEmpty();
         checks.add(readinessCheck(
                 "journal",
-                "Nhat ky ngay",
+                "Nhật ký ngày",
                 journalReady,
                 missingJournal,
-                dailyEntry == null ? "Chua co entry" : dailyEntry.getPageCount() + "/" + requiredPages + " trang"
+                dailyEntry == null ? "Chưa có nhật ký" : dailyEntry.getPageCount() + "/" + requiredPages + " trang"
         ));
 
         StoredWordFile storedWordFile = storedWordFile(user, workDate);
@@ -392,19 +392,19 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 : document != null
                         ? fileName(user, document.getCompletedShiftCount()) + ".docx"
                         : null;
-        List<String> missingWordFile = journalReady ? List.of() : List.of("Can nhat ky du dieu kien de tao hoac dinh kem file Word");
+        List<String> missingWordFile = journalReady ? List.of() : List.of("Cần nhật ký đủ điều kiện để tạo hoặc đính kèm file Word.");
         checks.add(readinessCheck(
                 "wordFile",
                 "File Word",
                 missingWordFile.isEmpty(),
                 missingWordFile,
-                storedWordFile != null ? "Dung file Word da upload: " + storedWordFile.fileName() : "Se tao file Word tu nhat ky web"
+                storedWordFile != null ? "Dùng file Word đã upload: " + storedWordFile.fileName() : "Sẽ tạo file Word từ nhật ký web"
         ));
 
         boolean ready = checks.stream().allMatch(DailyMailReadinessItemResponse::ready);
         int completedShiftCount = document == null ? schedules.size() : document.getCompletedShiftCount();
-        String subject = user.getFullName() + ", duoc " + completedShiftCount
-                + " ca, ngay " + workDate.format(SUBJECT_DATE_FORMAT);
+        String subject = user.getFullName() + ", được " + completedShiftCount
+                + " ca, ngày " + workDate.format(SUBJECT_DATE_FORMAT);
         return new DailyMailReadinessResponse(
                 user.getId(),
                 workDate,
@@ -428,30 +428,30 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Transactional
     public MailSubmitResponse submitDailyMail(AppUser user, SubmitDailyReportMailRequest request) {
         if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
-            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc gui mail nhat ky");
+            throw new ForbiddenException("Chỉ sinh viên hoặc nhóm trưởng mới được gửi mail nhật ký.");
         }
         if (request == null || request.workDate() == null) {
-            throw new BusinessException("Ngay gui mail la bat buoc");
+            throw new BusinessException("Ngày gửi mail là bắt buộc.");
         }
         if (!StringUtils.hasText(request.googleAccessToken())) {
-            throw new BusinessException("Can cap quyen Gmail de gui mail bang chinh tai khoan cua sinh vien");
+            throw new BusinessException("Cần cấp quyền Gmail để gửi mail bằng chính tài khoản của sinh viên.");
         }
 
         List<String> missingProfileFields = ProfileCompleteness.missingRequiredFields(user);
         if (!missingProfileFields.isEmpty()) {
-            throw new BusinessException("Ho so sinh vien chua du thong tin bat buoc: " + String.join(", ", missingProfileFields));
+            throw new BusinessException("Hồ sơ sinh viên chưa đủ thông tin bắt buộc: " + String.join(", ", missingProfileFields));
         }
         String tokenEmail = fetchGoogleEmail(request.googleAccessToken());
         if (!user.getEmail().equalsIgnoreCase(tokenEmail)) {
-            throw new BusinessException("Token Gmail khong khop voi email dang nhap");
+            throw new BusinessException("Token Gmail không khớp với email đăng nhập.");
         }
         ReportDocument document = reportDocumentRepository.findByUser(user)
-                .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+                .orElseThrow(() -> new BusinessException("Sinh viên chưa có nhật ký thực tập."));
         refreshDocument(document);
         ReportEntry dailyEntry = reportEntryRepository.findByDocumentAndWorkDate(document, request.workDate())
-                .orElseThrow(() -> new BusinessException("Ngay nay chua co noi dung nhat ky"));
+                .orElseThrow(() -> new BusinessException("Ngày này chưa có nội dung nhật ký."));
         if (dailyEntry.getPageCount() < dailyEntry.getRequiredPages()) {
-            throw new BusinessException("Nhat ky ngay nay chua du so trang yeu cau");
+            throw new BusinessException("Nhật ký ngày này chưa đủ số trang yêu cầu.");
         }
 
         List<ScheduleRegistration> schedules = scheduleRegistrationRepository
@@ -518,18 +518,18 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     @Transactional
     public MailSubmitResponse confirmDailyMailSent(AppUser user, ConfirmDailyReportMailRequest request) {
         if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
-            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc xac nhan gui mail nhat ky");
+            throw new ForbiddenException("Chỉ sinh viên hoặc nhóm trưởng mới được xác nhận gửi mail nhật ký.");
         }
         if (request == null || request.workDate() == null) {
-            throw new BusinessException("Ngay xac nhan gui mail la bat buoc");
+            throw new BusinessException("Ngày xác nhận gửi mail là bắt buộc.");
         }
 
         ReportDocument document = reportDocumentRepository.findByUser(user)
-                .orElseThrow(() -> new BusinessException("Sinh vien chua co nhat ky thuc tap"));
+                .orElseThrow(() -> new BusinessException("Sinh viên chưa có nhật ký thực tập."));
         ReportEntry dailyEntry = reportEntryRepository.findByDocumentAndWorkDate(document, request.workDate())
-                .orElseThrow(() -> new BusinessException("Ngay nay chua co noi dung nhat ky"));
+                .orElseThrow(() -> new BusinessException("Ngày này chưa có nội dung nhật ký."));
         if (dailyEntry.getPageCount() < dailyEntry.getRequiredPages()) {
-            throw new BusinessException("Nhat ky ngay nay chua du so trang yeu cau");
+            throw new BusinessException("Nhật ký ngày này chưa đủ số trang yêu cầu.");
         }
 
         List<Attendance> attendances = attendanceRepository.findByUserAndAttendanceDateOrderByShift_StartTimeAsc(
@@ -537,7 +537,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 request.workDate()
         );
         Instant confirmedAt = Instant.now();
-        String subject = user.getFullName() + ", xac nhan da gui mail ngay " + request.workDate().format(SUBJECT_DATE_FORMAT);
+        String subject = user.getFullName() + ", xác nhận đã gửi mail ngày " + request.workDate().format(SUBJECT_DATE_FORMAT);
         EmailLog emailLog = EmailLog.builder()
                 .user(user)
                 .subject(subject)
@@ -558,7 +558,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                 .orElseGet(() -> {
                     ReportDocument document = ReportDocument.builder()
                             .user(user)
-                            .title("Nhat ky thuc tap")
+                            .title("Nhật ký thực tập")
                             .currentFileName(fileName(user, 0))
                             .build();
                     return reportDocumentRepository.save(document);
@@ -585,17 +585,17 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     private void validateWordFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException("File Word la bat buoc");
+            throw new BusinessException("File Word là bắt buộc.");
         }
         String filename = file.getOriginalFilename();
         if (!StringUtils.hasText(filename) || !filename.toLowerCase().endsWith(".docx")) {
-            throw new BusinessException("Chi chap nhan file .docx");
+            throw new BusinessException("Chỉ chấp nhận file .docx.");
         }
         String contentType = file.getContentType();
         if (StringUtils.hasText(contentType)
                 && !WORD_CONTENT_TYPE.equalsIgnoreCase(contentType)
                 && !"application/octet-stream".equalsIgnoreCase(contentType)) {
-            throw new BusinessException("Content-Type file Word khong hop le");
+            throw new BusinessException("Content-Type của file Word không hợp lệ.");
         }
         if (file.getSize() > MAX_WORD_UPLOAD_BYTES) {
             throw new BusinessException("File Word vuot qua gioi han 10MB");
@@ -612,7 +612,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                     .orElse("");
             return new WordDocumentContent(text, estimatePageCount(text), countWords(text));
         } catch (IOException exception) {
-            throw new BusinessException("Khong the doc noi dung file Word");
+            throw new BusinessException("Không thể đọc nội dung file Word.");
         }
     }
 
@@ -624,7 +624,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             }
             Files.writeString(wordFileNamePath(user.getId(), workDate), fileNameOnly(file.getOriginalFilename()), StandardCharsets.UTF_8);
         } catch (IOException exception) {
-            throw new BusinessException("Khong the luu file Word nhat ky");
+            throw new BusinessException("Không thể lưu file Word nhật ký.");
         }
     }
 
@@ -699,10 +699,10 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new BusinessException("Gmail tu choi gui mail. Hay cap quyen gui mail lai");
+                throw new BusinessException("Gmail từ chối gửi mail. Hãy cấp quyền gửi mail lại.");
             }
         } catch (MessagingException exception) {
-            throw new BusinessException("Khong the tao mail cuoi ngay");
+            throw new BusinessException("Không thể tạo mail cuối ngày.");
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -719,13 +719,13 @@ public class ReportJournalServiceImpl implements ReportJournalService {
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new BusinessException("Khong xac minh duoc tai khoan Gmail gui mail");
+                throw new BusinessException("Không xác minh được tài khoản Gmail gửi mail.");
             }
             return objectMapper.readTree(response.body()).path("email").asText().trim().toLowerCase();
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("Khong xac minh duoc email Google");
+            throw new BusinessException("Không xác minh được email Google.");
         }
     }
 
@@ -753,7 +753,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             wordDocument.write(output);
             return output.toByteArray();
         } catch (Exception exception) {
-            throw new BusinessException("Khong the tao file Word nhat ky");
+            throw new BusinessException("Không thể tạo file Word nhật ký.");
         }
     }
 
@@ -783,7 +783,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             boolean hasAttendance = attendances.stream()
                     .anyMatch(attendance -> attendance.getShift().getId().equals(schedule.getShift().getId()));
             if (!hasAttendance) {
-                missing.add(schedule.getShift().getName() + ": chua check-in");
+                missing.add(schedule.getShift().getName() + ": chưa check-in");
             }
         }
         return List.copyOf(missing);
@@ -792,17 +792,17 @@ public class ReportJournalServiceImpl implements ReportJournalService {
     private List<String> missingJournalIssues(ReportDocument document, ReportEntry dailyEntry, int requiredPages) {
         List<String> missing = new ArrayList<>();
         if (document == null) {
-            missing.add("Sinh vien chua co nhat ky thuc tap");
+            missing.add("Sinh viên chưa có nhật ký thực tập.");
         }
         if (dailyEntry == null) {
-            missing.add("Ngay nay chua co noi dung nhat ky");
+            missing.add("Ngày này chưa có nội dung nhật ký.");
             return List.copyOf(missing);
         }
         if (!StringUtils.hasText(dailyEntry.getContent())) {
-            missing.add("Nhat ky ngay nay chua co noi dung");
+            missing.add("Nhật ký ngày này chưa có nội dung.");
         }
         if (dailyEntry.getPageCount() < requiredPages) {
-            missing.add("Nhat ky chua du " + requiredPages + " trang yeu cau");
+            missing.add("Nhật ký chưa đủ " + requiredPages + " trang yêu cầu.");
         }
         if (!StringUtils.hasText(dailyEntry.getSourceReferences())) {
             missing.add("Thieu nguon trich dan theo ca");
@@ -816,7 +816,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         int satisfiedCount = 0;
         int skippedCount = 0;
         if (attendances.isEmpty()) {
-            missing.add("Chua co attendance de gom anh");
+            missing.add("Chưa có lượt điểm danh để gom ảnh.");
         }
         for (Attendance attendance : attendances) {
             String shiftName = attendance.getShift().getName();
@@ -824,13 +824,13 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             if (StringUtils.hasText(attendance.getCheckinTimemarkImageUrl())) {
                 satisfiedCount++;
             } else {
-                missing.add(shiftName + ": thieu TimeMark dau gio");
+                missing.add(shiftName + ": thiếu TimeMark đầu giờ");
             }
             requiredCount++;
             if (StringUtils.hasText(attendance.getCheckoutTimemarkImageUrl())) {
                 satisfiedCount++;
             } else {
-                missing.add(shiftName + ": thieu TimeMark cuoi ca");
+                missing.add(shiftName + ": thiếu TimeMark cuối ca");
             }
         }
         for (AttendancePhotoRequirement requirement : requirements) {
@@ -851,7 +851,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     private String requirementPhotoLabel(AttendancePhotoRequirement requirement) {
         return requirement.getAttendance().getShift().getName()
-                + ": thieu "
+                + ": thiếu "
                 + requirement.getImageType().name()
                 + " "
                 + formatTime(requirement.getExpectedTime());
@@ -932,7 +932,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             String finalName = normalizedName.toLowerCase().endsWith(".docx") ? normalizedName : normalizedName + ".docx";
             return new UploadedDocument(finalName, bytes);
         } catch (IllegalArgumentException exception) {
-            throw new BusinessException("File Word tai len khong hop le");
+            throw new BusinessException("File Word tải lên không hợp lệ.");
         }
     }
 
@@ -1090,15 +1090,15 @@ public class ReportJournalServiceImpl implements ReportJournalService {
 
     private AppUser findUser(UUID id) {
         return appUserRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy người dùng."));
     }
 
     private void validateRequest(ReportEntryRequest request) {
         if (request == null) {
-            throw new BusinessException("Du lieu nhat ky la bat buoc");
+            throw new BusinessException("Dữ liệu nhật ký là bắt buộc.");
         }
         if (request.workDate() == null || request.workDate().isAfter(LocalDate.now().plusDays(1))) {
-            throw new BusinessException("Ngay viet nhat ky khong hop le");
+            throw new BusinessException("Ngày viết nhật ký không hợp lệ.");
         }
     }
 
@@ -1106,7 +1106,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
         boolean owner = entry.getDocument().getUser().getId().equals(currentUser.getId());
         boolean privileged = currentUser.getRole() == UserRole.ADMIN;
         if (!owner && !privileged) {
-            throw new ForbiddenException("Ban khong co quyen xem lich su nhat ky cua user khac");
+            throw new ForbiddenException("Bạn không có quyền xem lịch sử nhật ký của người dùng khác.");
         }
     }
 

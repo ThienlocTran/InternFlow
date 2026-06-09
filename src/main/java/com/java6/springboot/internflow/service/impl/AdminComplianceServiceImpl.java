@@ -115,7 +115,7 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
     public AdminShiftComplianceResponse getShiftCompliance(LocalDate workDate, UUID shiftId) {
         LocalDate targetDate = workDate == null ? LocalDate.now() : workDate;
         Shift shift = shiftRepository.findById(shiftId)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy ca."));
 
         List<ScheduleRegistration> shiftSchedules = scheduleRegistrationRepository
                 .findByShiftAndScheduleDateAndStatusOrderByUser_FullNameAsc(
@@ -296,7 +296,7 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
             boolean checkedIn = attendances.stream()
                     .anyMatch(attendance -> attendance.getShift().getId().equals(schedule.getShift().getId()));
             if (!checkedIn) {
-                missing.add(schedule.getShift().getName() + ": chua check-in");
+                missing.add(schedule.getShift().getName() + ": chưa check-in");
             }
         }
         return List.copyOf(missing);
@@ -308,7 +308,7 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
         int satisfiedCount = 0;
         int skippedCount = 0;
         if (attendances.isEmpty()) {
-            missing.add("Chua co attendance de gom anh");
+            missing.add("Chưa có lượt điểm danh để gom ảnh.");
         }
         for (Attendance attendance : attendances) {
             String shiftName = attendance.getShift().getName();
@@ -316,13 +316,13 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
             if (StringUtils.hasText(attendance.getCheckinTimemarkImageUrl())) {
                 satisfiedCount++;
             } else {
-                missing.add(shiftName + ": thieu TimeMark dau gio");
+                missing.add(shiftName + ": thiếu TimeMark đầu giờ");
             }
             requiredCount++;
             if (StringUtils.hasText(attendance.getCheckoutTimemarkImageUrl())) {
                 satisfiedCount++;
             } else {
-                missing.add(shiftName + ": thieu TimeMark cuoi ca");
+                missing.add(shiftName + ": thiếu TimeMark cuối ca");
             }
         }
         for (AttendancePhotoRequirement requirement : requirements) {
@@ -345,17 +345,17 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
         List<String> issues = new ArrayList<>();
         int submittedPages = entry == null ? 0 : entry.getPageCount();
         if (entry == null) {
-            issues.add("Chua co nhat ky ngay");
+            issues.add("Chưa có nhật ký ngày.");
             return new JournalStats(false, requiredPages, submittedPages, Math.max(0, requiredPages), List.copyOf(issues));
         }
         if (!StringUtils.hasText(entry.getContent())) {
-            issues.add("Nhat ky chua co noi dung");
+            issues.add("Nhật ký chưa có nội dung.");
         }
         if (submittedPages < requiredPages) {
-            issues.add("Nhat ky chua du " + requiredPages + " trang yeu cau");
+            issues.add("Nhật ký chưa đủ " + requiredPages + " trang yêu cầu.");
         }
         if (!StringUtils.hasText(entry.getSourceReferences())) {
-            issues.add("Thieu nguon trich dan theo ca");
+            issues.add("Thiếu nguồn trích dẫn theo ca.");
         }
         return new JournalStats(
                 issues.isEmpty(),
@@ -376,7 +376,7 @@ public class AdminComplianceServiceImpl implements AdminComplianceService {
 
     private String requirementPhotoLabel(AttendancePhotoRequirement requirement) {
         return requirement.getAttendance().getShift().getName()
-                + ": thieu "
+                + ": thiếu "
                 + requirement.getImageType().name()
                 + " "
                 + formatTime(requirement.getExpectedTime());

@@ -53,12 +53,12 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     public List<ScheduleRegistrationResponse> register(AppUser user, ScheduleRegistrationRequest request) {
         validateRequest(request);
         if (user.getRole() != UserRole.INTERN && user.getRole() != UserRole.TEAM_LEADER) {
-            throw new ForbiddenException("Chi sinh vien hoac nhom truong moi duoc dang ky ca");
+            throw new ForbiddenException("Chỉ sinh viên hoặc nhóm trưởng mới được đăng ký ca.");
         }
         RolePolicy policy = rolePolicyRepository.findByRole(user.getRole())
-                .orElseThrow(() -> new BusinessException("Chua cau hinh quota cho role " + user.getRole()));
+                .orElseThrow(() -> new BusinessException("Chưa cấu hình quota cho vai trò " + user.getRole() + "."));
         if (policy.getMaxShiftsPerDay() <= 0) {
-            throw new BusinessException("Role nay khong dang ky ca thuc tap");
+            throw new BusinessException("Vai trò này không được đăng ký ca thực tập.");
         }
 
         List<Shift> shifts = request.shiftIds().stream()
@@ -73,7 +73,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         );
         int dailyLimit = effectiveDailyLimit(user, policy, request.scheduleDate());
         if (existingRegistrations.size() + shifts.size() > dailyLimit) {
-            throw new BusinessException("Vuot so ca toi da trong ngay");
+            throw new BusinessException("Bạn đã vượt số ca tối đa trong ngày.");
         }
         LocalDate cumulativeQuotaStart = resolveQuotaStartDate(user, request.scheduleDate());
         LocalDate weekEnd = request.scheduleDate().with(DayOfWeek.MONDAY).plusDays(6);
@@ -85,13 +85,13 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         );
         int cumulativeLimit = calculateCumulativeWeeklyLimit(policy, cumulativeQuotaStart, request.scheduleDate());
         if (policy.getTargetShiftsPerWeek() > 0 && cumulativeCount + shifts.size() > cumulativeLimit) {
-            throw new BusinessException("Vuot quota tich luy den het tuan nay (" + cumulativeLimit + " ca)");
+            throw new BusinessException("Bạn đã vượt quota tích lũy đến hết tuần này (" + cumulativeLimit + " ca).");
         }
         LinkedHashMap<UUID, Shift> combinedShifts = new LinkedHashMap<>();
         existingRegistrations.forEach(registration -> combinedShifts.put(registration.getShift().getId(), registration.getShift()));
         shifts.forEach(shift -> combinedShifts.put(shift.getId(), shift));
         if (!isAdjacent(combinedShifts.values().stream().toList())) {
-            throw new BusinessException("Cac ca trong ngay phai lien ke theo thu tu ca");
+            throw new BusinessException("Các ca trong ngày phải liền kề theo thứ tự ca.");
         }
 
         return shifts.stream()
@@ -145,19 +145,19 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
     @Transactional
     public ScheduleRegistrationResponse cancel(AppUser currentUser, UUID registrationId) {
         if (registrationId == null) {
-            throw new BusinessException("Registration id la bat buoc");
+            throw new BusinessException("Mã đăng ký ca là bắt buộc.");
         }
         ScheduleRegistration registration = scheduleRegistrationRepository.findById(registrationId)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay lich dang ky"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch đăng ký."));
         if (!registration.getUser().getId().equals(currentUser.getId())) {
-            throw new ForbiddenException("Ban khong co quyen roi ca cua user khac");
+            throw new ForbiddenException("Bạn không có quyền rời ca của người khác.");
         }
         LocalDateTime shiftStart = LocalDateTime.of(
                 registration.getScheduleDate(),
                 registration.getShift().getStartTime()
         );
         if (!LocalDateTime.now(BUSINESS_ZONE).isBefore(shiftStart)) {
-            throw new BusinessException("Da den gio bat dau ca nen khong the roi ca");
+            throw new BusinessException("Đã đến giờ bắt đầu ca nên không thể rời ca.");
         }
         boolean attendanceStarted = attendanceRepository.findByUserAndShiftAndAttendanceDate(
                 registration.getUser(),
@@ -165,7 +165,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                 registration.getScheduleDate()
         ).isPresent();
         if (attendanceStarted) {
-            throw new BusinessException("Ca nay da phat sinh diem danh nen khong the roi ca");
+            throw new BusinessException("Ca này đã phát sinh điểm danh nên không thể rời ca.");
         }
         registration.setStatus(ScheduleRegistrationStatus.CANCELLED);
         return ScheduleRegistrationResponse.from(scheduleRegistrationRepository.save(registration));
@@ -179,7 +179,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
                 .map(ScheduleRegistration::getStatus)
                 .filter(ScheduleRegistrationStatus.REGISTERED::equals)
                 .isPresent()) {
-            throw new BusinessException("Ban da dang ky " + shift.getName() + " trong ngay nay");
+            throw new BusinessException("Bạn đã đăng ký " + shift.getName() + " trong ngày này.");
         }
 
         // TEAM_LEADER không chiếm slot — chỉ kiểm tra giới hạn với INTERN
@@ -187,7 +187,7 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
         if (!isTeamLeader) {
             long billableCount = countBillableParticipants(shift, request.scheduleDate());
             if (billableCount >= shift.getMaxParticipants()) {
-                throw new BusinessException(shift.getName() + " da du " + shift.getMaxParticipants() + " ban");
+                throw new BusinessException(shift.getName() + " đã đủ " + shift.getMaxParticipants() + " bạn.");
             }
         }
 
@@ -256,29 +256,29 @@ public class ScheduleRegistrationServiceImpl implements ScheduleRegistrationServ
 
     private void validateRequest(ScheduleRegistrationRequest request) {
         if (request == null) {
-            throw new BusinessException("Du lieu dang ky ca la bat buoc");
+            throw new BusinessException("Dữ liệu đăng ký ca là bắt buộc.");
         }
         if (request.scheduleDate() == null) {
-            throw new BusinessException("Ngay dang ky la bat buoc");
+            throw new BusinessException("Ngày đăng ký là bắt buộc.");
         }
         if (request.scheduleDate().isBefore(LocalDate.now())) {
-            throw new BusinessException("Khong the dang ky ca trong ngay da qua");
+            throw new BusinessException("Không thể đăng ký ca trong ngày đã qua.");
         }
         if (request.shiftIds() == null || request.shiftIds().isEmpty()) {
-            throw new BusinessException("Can chon it nhat 1 ca");
+            throw new BusinessException("Cần chọn ít nhất 1 ca.");
         }
     }
 
     private AppUser findUser(UUID id) {
         return appUserRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay user"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy người dùng."));
     }
 
     private Shift findShift(UUID id) {
         Shift shift = shiftRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Khong tim thay ca"));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy ca."));
         if (!shift.isActive()) {
-            throw new BusinessException("Ca nay dang tam tat, khong the dang ky");
+            throw new BusinessException("Ca này đang tạm tắt, không thể đăng ký.");
         }
         return shift;
     }
