@@ -67,6 +67,7 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -588,7 +589,7 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             throw new BusinessException("File Word là bắt buộc.");
         }
         String filename = file.getOriginalFilename();
-        if (!StringUtils.hasText(filename) || !filename.toLowerCase().endsWith(".docx")) {
+        if (!StringUtils.hasText(filename) || !filename.toLowerCase(Locale.ROOT).endsWith(".docx")) {
             throw new BusinessException("Chỉ chấp nhận file .docx.");
         }
         String contentType = file.getContentType();
@@ -598,7 +599,23 @@ public class ReportJournalServiceImpl implements ReportJournalService {
             throw new BusinessException("Content-Type của file Word không hợp lệ.");
         }
         if (file.getSize() > MAX_WORD_UPLOAD_BYTES) {
-            throw new BusinessException("File Word vuot qua gioi han 10MB");
+            throw new BusinessException("File Word vượt quá giới hạn 10MB.");
+        }
+        if (!hasDocxSignature(file)) {
+            throw new BusinessException("Nội dung file không đúng định dạng .docx.");
+        }
+    }
+
+    private boolean hasDocxSignature(MultipartFile file) {
+        try (InputStream input = file.getInputStream()) {
+            byte[] header = input.readNBytes(4);
+            return header.length == 4
+                    && header[0] == 0x50
+                    && header[1] == 0x4B
+                    && header[2] == 0x03
+                    && header[3] == 0x04;
+        } catch (IOException exception) {
+            throw new BusinessException("Không thể kiểm tra định dạng file Word.");
         }
     }
 
