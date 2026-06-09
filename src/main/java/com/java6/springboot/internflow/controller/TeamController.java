@@ -3,6 +3,7 @@ package com.java6.springboot.internflow.controller;
 import com.java6.springboot.internflow.dto.ApiResponse;
 import com.java6.springboot.internflow.dto.request.AddTeamMemberRequest;
 import com.java6.springboot.internflow.dto.request.TeamRequest;
+import com.java6.springboot.internflow.dto.response.AdminShiftComplianceResponse;
 import com.java6.springboot.internflow.dto.response.ShiftPeerResponse;
 import com.java6.springboot.internflow.dto.response.TeamMemberDetailResponse;
 import com.java6.springboot.internflow.dto.response.TeamMemberFullDetailResponse;
@@ -64,6 +65,18 @@ public class TeamController {
         AppUser currentUser = requireTeamLeader(httpRequest);
         currentUserService.rejectMismatchedRequestUser(currentUser, leaderId);
         return ApiResponse.ok("Lay danh sach cung ca thanh cong", teamService.getLeaderShiftPeers(leaderId, date == null ? LocalDate.now() : date));
+    }
+
+    @GetMapping("/leader-compliance-shift")
+    public ApiResponse<AdminShiftComplianceResponse> getLeaderShiftCompliance(
+            HttpServletRequest httpRequest,
+            @RequestParam UUID leaderId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam UUID shiftId
+    ) {
+        AppUser currentUser = requireTeamLeader(httpRequest);
+        currentUserService.rejectMismatchedRequestUser(currentUser, leaderId);
+        return ApiResponse.ok("Lay compliance ca cua nhom truong thanh cong", teamService.getLeaderShiftCompliance(leaderId, date == null ? LocalDate.now() : date, shiftId));
     }
 
     @GetMapping("/member-detail")

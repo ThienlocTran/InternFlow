@@ -2,6 +2,7 @@ package com.java6.springboot.internflow.service.impl;
 
 import com.java6.springboot.internflow.dto.request.AddTeamMemberRequest;
 import com.java6.springboot.internflow.dto.request.TeamRequest;
+import com.java6.springboot.internflow.dto.response.AdminShiftComplianceResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceResponse;
 import com.java6.springboot.internflow.dto.response.AttendanceImageResponse;
 import com.java6.springboot.internflow.dto.response.DailyReportEntryResponse;
@@ -36,6 +37,7 @@ import com.java6.springboot.internflow.repository.ReportEntryRepository;
 import com.java6.springboot.internflow.repository.ScheduleRegistrationRepository;
 import com.java6.springboot.internflow.repository.TeamMemberRepository;
 import com.java6.springboot.internflow.repository.TeamRepository;
+import com.java6.springboot.internflow.service.AdminComplianceService;
 import com.java6.springboot.internflow.service.AttendanceService;
 import com.java6.springboot.internflow.service.ReportJournalService;
 import com.java6.springboot.internflow.service.TeamService;
@@ -64,6 +66,7 @@ public class TeamServiceImpl implements TeamService {
     private final AttendanceImageRepository attendanceImageRepository;
     private final ReportDocumentRepository reportDocumentRepository;
     private final ReportEntryRepository reportEntryRepository;
+    private final AdminComplianceService adminComplianceService;
     private final AttendanceService attendanceService;
     private final ReportJournalService reportJournalService;
 
@@ -167,6 +170,26 @@ public class TeamServiceImpl implements TeamService {
                         complianceFor(schedules.get(0).getUser(), date, schedules)
                 ))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminShiftComplianceResponse getLeaderShiftCompliance(UUID leaderId, LocalDate date, UUID shiftId) {
+        if (leaderId == null || date == null || shiftId == null) {
+            throw new BusinessException("Leader id, ngay va ca la bat buoc");
+        }
+        AppUser leader = findUser(leaderId);
+        if (leader.getRole() != UserRole.TEAM_LEADER) {
+            throw new BusinessException("Chi nhom truong moi xem duoc compliance theo ca");
+        }
+        boolean registeredShift = scheduleRegistrationRepository
+                .findByUserAndScheduleDateAndStatus(leader, date, ScheduleRegistrationStatus.REGISTERED)
+                .stream()
+                .anyMatch(registration -> registration.getShift().getId().equals(shiftId));
+        if (!registeredShift) {
+            throw new ForbiddenException("Nhom truong chi duoc xem compliance ca minh da dang ky");
+        }
+        return adminComplianceService.getShiftCompliance(date, shiftId);
     }
 
     private ShiftPeerComplianceResponse complianceFor(AppUser user, LocalDate date, List<ScheduleRegistration> schedules) {
